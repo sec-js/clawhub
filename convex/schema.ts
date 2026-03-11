@@ -462,7 +462,22 @@ const skillSearchDigest = defineTable({
   isSuspicious: v.optional(v.boolean()),
   createdAt: v.number(),
   updatedAt: v.number(),
-}).index('by_skill', ['skillId'])
+})
+  .index('by_skill', ['skillId'])
+  .index('by_active_updated', ['softDeletedAt', 'updatedAt'])
+  .index('by_active_created', ['softDeletedAt', 'createdAt'])
+  .index('by_active_name', ['softDeletedAt', 'displayName'])
+  .index('by_active_stats_downloads', [
+    'softDeletedAt',
+    'statsDownloads',
+    'updatedAt',
+  ])
+  .index('by_active_stats_stars', ['softDeletedAt', 'statsStars', 'updatedAt'])
+  .index('by_active_stats_installs_all_time', [
+    'softDeletedAt',
+    'statsInstallsAllTime',
+    'updatedAt',
+  ])
 
 const skillDailyStats = defineTable({
   skillId: v.id('skills'),

@@ -277,8 +277,9 @@ export const lexicalFallbackSkills = internalQuery({
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT)
     const seenSkillIds = new Set<Id<'skills'>>()
-    const candidateSkills: Doc<'skills'>[] = []
+    const candidates: HydratableSkill[] = []
 
+    // Exact slug match via the skills table (only one row, cheap).
     const slugQuery = args.query.trim().toLowerCase()
     if (/^[a-z0-9][a-z0-9-]*$/.test(slugQuery)) {
       const exactSlugSkill = await ctx.db
@@ -291,24 +292,26 @@ export const lexicalFallbackSkills = internalQuery({
         (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill))
       ) {
         seenSkillIds.add(exactSlugSkill._id)
-        candidateSkills.push(exactSlugSkill)
+        candidates.push(exactSlugSkill)
       }
     }
 
-    const recentSkills = await ctx.db
-      .query('skills')
+    // Scan recent active digests (~800 bytes each) instead of full skill docs (~3-5KB).
+    const recentDigests = await ctx.db
+      .query('skillSearchDigest')
       .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
       .order('desc')
       .take(FALLBACK_SCAN_LIMIT)
 
-    for (const skill of recentSkills) {
-      if (seenSkillIds.has(skill._id)) continue
+    for (const digest of recentDigests) {
+      if (seenSkillIds.has(digest.skillId)) continue
+      const skill = digestToHydratableSkill(digest)
       if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue
-      seenSkillIds.add(skill._id)
-      candidateSkills.push(skill)
+      seenSkillIds.add(digest.skillId)
+      candidates.push(skill)
     }
 
-    const matched = candidateSkills.filter((skill) =>
+    const matched = candidates.filter((skill) =>
       matchesExactTokens(args.queryTokens, [skill.displayName, skill.slug, skill.summary]),
     )
     if (matched.length === 0) return []
@@ -331,8 +334,6 @@ export const lexicalFallbackSkills = internalQuery({
     const validEntries = entries.filter((entry): entry is SkillSearchEntry => entry !== null)
     if (validEntries.length === 0) return []
 
-    // Skills already have badges from their docs (via toPublicSkill).
-    // No need for a separate badge table lookup.
     const filtered = args.highlightedOnly
       ? validEntries.filter((entry) => isSkillHighlighted(entry.skill))
       : validEntries

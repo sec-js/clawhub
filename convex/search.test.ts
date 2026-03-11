@@ -127,6 +127,7 @@ describe('search helpers', () => {
     expect(result).toHaveLength(1)
     expect(result[0].skill.slug).toBe('orf')
     expect(ctx.db.query).toHaveBeenCalledWith('skills')
+    expect(ctx.db.query).toHaveBeenCalledWith('skillSearchDigest')
   })
 
   it('dedupes overlap and enforces rank + limit across vector and fallback', async () => {
@@ -556,27 +557,41 @@ function makeLexicalCtx(params: {
   exactSlugSkill: ReturnType<typeof makeSkillDoc> | null
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>
 }) {
+  // Convert skill docs to digest-shaped rows (add skillId, keep shared fields).
+  const digestRows = params.recentSkills.map((skill) => ({
+    ...skill,
+    skillId: skill._id,
+  }))
   return {
     db: {
       query: vi.fn((table: string) => {
-        if (table !== 'skills') throw new Error(`Unexpected table ${table}`)
-        return {
-          withIndex: (index: string) => {
-            if (index === 'by_slug') {
-              return {
-                unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
+        if (table === 'skills') {
+          return {
+            withIndex: (index: string) => {
+              if (index === 'by_slug') {
+                return {
+                  unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
+                }
               }
-            }
-            if (index === 'by_active_updated') {
-              return {
-                order: () => ({
-                  take: vi.fn().mockResolvedValue(params.recentSkills),
-                }),
-              }
-            }
-            throw new Error(`Unexpected index ${index}`)
-          },
+              throw new Error(`Unexpected skills index ${index}`)
+            },
+          }
         }
+        if (table === 'skillSearchDigest') {
+          return {
+            withIndex: (index: string) => {
+              if (index === 'by_active_updated') {
+                return {
+                  order: () => ({
+                    take: vi.fn().mockResolvedValue(digestRows),
+                  }),
+                }
+              }
+              throw new Error(`Unexpected digest index ${index}`)
+            },
+          }
+        }
+        throw new Error(`Unexpected table ${table}`)
       }),
       get: vi.fn(async (id: string) => {
         if (id.startsWith('users:')) return { _id: id, handle: 'owner' }
