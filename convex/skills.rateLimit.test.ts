@@ -425,7 +425,7 @@ describe('skills anti-spam guards', () => {
         reasonCodes: ['malicious.crypto_mining'],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtAnalysis: { status: 'malicious' },
@@ -479,6 +479,8 @@ describe('skills anti-spam guards', () => {
         throw new Error(`unexpected table ${table}`)
       }),
       patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
     }
 
     await approveSkillByHashHandler(
@@ -576,7 +578,7 @@ describe('skills anti-spam guards', () => {
         reasonCodes: ['suspicious.dynamic_code_execution'],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtAnalysis: { status: 'malicious' },
@@ -612,6 +614,8 @@ describe('skills anti-spam guards', () => {
         throw new Error(`unexpected table ${table}`)
       }),
       patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
     }
 
     await escalateSkillByIdHandler(

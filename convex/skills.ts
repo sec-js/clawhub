@@ -494,29 +494,6 @@ function normalizeScannerSuspiciousReason(reason: string | undefined) {
   return `${reason.slice(0, -'.suspicious'.length)}.clean`
 }
 
-function resolveScannerModerationReason(params: {
-  vtStatus?: string
-  llmStatus?: string
-  verdict?: Doc<'skills'>['moderationVerdict']
-}) {
-  const vtStatus = params.vtStatus?.trim().toLowerCase()
-  const llmStatus = params.llmStatus?.trim().toLowerCase()
-
-  if (vtStatus === 'malicious') return 'scanner.vt.malicious'
-  if (llmStatus === 'malicious') return 'scanner.llm.malicious'
-  if (vtStatus === 'suspicious') return 'scanner.vt.suspicious'
-  if (llmStatus === 'suspicious') return 'scanner.llm.suspicious'
-  if (vtStatus === 'pending' || vtStatus === 'loading' || vtStatus === 'not_found') {
-    return 'scanner.vt.pending'
-  }
-  if (llmStatus === 'pending' || llmStatus === 'loading') return 'scanner.llm.pending'
-  if (vtStatus === 'clean') return 'scanner.vt.clean'
-  if (llmStatus === 'clean') return 'scanner.llm.clean'
-  if (params.verdict === 'malicious') return 'scanner.aggregate.malicious'
-  if (params.verdict === 'suspicious') return 'scanner.aggregate.suspicious'
-  return 'scanner.aggregate.clean'
-}
-
 async function adjustGlobalPublicCountForSkillChange(
   ctx: MutationCtx,
   previousSkill: Doc<'skills'> | null | undefined,

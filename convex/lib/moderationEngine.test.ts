@@ -100,7 +100,7 @@ describe('moderationEngine', () => {
         reasonCodes: ['suspicious.dynamic_code_execution'],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtStatus: 'malicious',
@@ -117,7 +117,7 @@ describe('moderationEngine', () => {
         reasonCodes: [],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
     })
@@ -130,7 +130,7 @@ describe('moderationEngine', () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: 'suspicious',
-        reasonCodes: ['suspicious.env_credential_access', 'suspicious.potential_exfiltration'],
+        reasonCodes: ['suspicious.env_credential_access'],
         findings: [
           {
             code: 'suspicious.env_credential_access',
@@ -142,7 +142,7 @@ describe('moderationEngine', () => {
           },
         ],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtStatus: 'clean',
@@ -154,6 +154,33 @@ describe('moderationEngine', () => {
     expect(snapshot.evidence.length).toBe(1)
   })
 
+  it('keeps non-allowlisted suspicious findings when VT and LLM both report clean', () => {
+    const snapshot = buildModerationSnapshot({
+      staticScan: {
+        status: 'suspicious',
+        reasonCodes: ['suspicious.env_credential_access', 'suspicious.potential_exfiltration'],
+        findings: [
+          {
+            code: 'suspicious.potential_exfiltration',
+            severity: 'warn',
+            file: 'index.ts',
+            line: 2,
+            message: 'File read combined with network send (possible exfiltration).',
+            evidence: 'readFileSync(secretPath)',
+          },
+        ],
+        summary: '',
+        engineVersion: 'v2.1.1',
+        checkedAt: Date.now(),
+      },
+      vtStatus: 'clean',
+      llmStatus: 'clean',
+    })
+
+    expect(snapshot.verdict).toBe('suspicious')
+    expect(snapshot.reasonCodes).toEqual(['suspicious.potential_exfiltration'])
+  })
+
   it('preserves static malicious findings even when VT and LLM are clean', () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
@@ -161,7 +188,7 @@ describe('moderationEngine', () => {
         reasonCodes: ['malicious.crypto_mining', 'suspicious.dynamic_code_execution'],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtStatus: 'clean',
@@ -170,7 +197,7 @@ describe('moderationEngine', () => {
 
     expect(snapshot.verdict).toBe('malicious')
     expect(snapshot.reasonCodes).toContain('malicious.crypto_mining')
-    expect(snapshot.reasonCodes).not.toContain('suspicious.dynamic_code_execution')
+    expect(snapshot.reasonCodes).toContain('suspicious.dynamic_code_execution')
   })
 
   it('keeps static suspicious findings when only one external scanner is clean', () => {
@@ -180,7 +207,7 @@ describe('moderationEngine', () => {
         reasonCodes: ['suspicious.env_credential_access'],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtStatus: 'clean',
@@ -197,7 +224,7 @@ describe('moderationEngine', () => {
         reasonCodes: ['suspicious.env_credential_access'],
         findings: [],
         summary: '',
-        engineVersion: 'v2.1.0',
+        engineVersion: 'v2.1.1',
         checkedAt: Date.now(),
       },
       vtStatus: 'suspicious',

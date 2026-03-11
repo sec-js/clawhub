@@ -1,5 +1,6 @@
 import type { Doc, Id } from '../_generated/dataModel'
 import {
+  isExternallyClearableSuspiciousCode,
   legacyFlagsFromVerdict,
   MODERATION_ENGINE_VERSION,
   normalizeReasonCodes,
@@ -314,13 +315,14 @@ export function buildModerationSnapshot(params: {
   const evidence = [...(params.staticScan?.findings ?? [])]
 
   // When both external scanners (VT + LLM) explicitly report clean/benign,
-  // demote static suspicious-level findings from the verdict calculation.
-  // Malicious-level static findings (crypto mining, known signatures) are never demoted.
-  // The original findings are preserved in evidence for transparency.
+  // only suppress allowlisted false-positive static codes from the verdict calculation.
+  // Everything else remains part of the moderation decision.
   const vtClean = isExternalScannerClean(params.vtStatus)
   const llmClean = isExternalScannerClean(params.llmStatus)
   if (vtClean && llmClean && staticCodes.length > 0) {
-    staticCodes = staticCodes.filter((code) => code.startsWith('malicious.'))
+    staticCodes = staticCodes.filter(
+      (code) => !isExternallyClearableSuspiciousCode(code),
+    )
   }
 
   const reasonCodes = [...staticCodes]

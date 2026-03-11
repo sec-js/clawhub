@@ -209,6 +209,25 @@ function isCleanStatus(status?: string) {
   return s === 'clean' || s === 'benign'
 }
 
+const EXTERNALLY_CLEARED_STATIC_CODES = new Set([
+  'suspicious.env_credential_access',
+])
+
+function areStaticFindingsExternallyCleared(
+  findings: StaticFinding[],
+  vtStatus?: string,
+  llmStatus?: string,
+) {
+  return (
+    findings.length > 0 &&
+    isCleanStatus(vtStatus) &&
+    isCleanStatus(llmStatus) &&
+    findings.every((finding) =>
+      EXTERNALLY_CLEARED_STATIC_CODES.has(finding.code),
+    )
+  )
+}
+
 function getStaticGuidance(
   findings: StaticFinding[],
   vtStatus?: string,
@@ -222,12 +241,16 @@ function getStaticGuidance(
       text: 'These patterns indicate potentially dangerous behavior. Exercise extreme caution and review the code thoroughly before installing.',
     }
   }
-  const externallyCleared = isCleanStatus(vtStatus) && isCleanStatus(llmStatus)
+  const externallyCleared = areStaticFindingsExternallyCleared(
+    findings,
+    vtStatus,
+    llmStatus,
+  )
   if (externallyCleared) {
     return {
       className: 'benign',
       label: 'Confirmed safe by external scanners',
-      text: 'Static analysis detected these patterns, but both VirusTotal and OpenClaw confirmed this skill is safe. The patterns are typical for skills that integrate with external APIs.',
+      text: 'Static analysis detected API credential-access patterns, but both VirusTotal and OpenClaw confirmed this skill is safe. These patterns are common in legitimate API integration skills.',
     }
   }
   const hasCritical = findings.some((f) => f.severity === 'critical')
