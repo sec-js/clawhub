@@ -1,4 +1,5 @@
 export type ModerationVerdict = 'clean' | 'suspicious' | 'malicious'
+export type ScannerModerationVerdict = ModerationVerdict
 
 export type ModerationFindingSeverity = 'info' | 'warn' | 'critical'
 
@@ -44,7 +45,7 @@ export function summarizeReasonCodes(codes: string[]) {
   return `Detected: ${top}${extra}`
 }
 
-export function verdictFromCodes(codes: string[]): ModerationVerdict {
+export function verdictFromCodes(codes: string[]): ScannerModerationVerdict {
   const normalized = normalizeReasonCodes(codes)
   if (normalized.some((code) => MALICIOUS_CODES.has(code) || code.startsWith('malicious.'))) {
     return 'malicious'

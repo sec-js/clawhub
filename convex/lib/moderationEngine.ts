@@ -5,6 +5,7 @@ import {
   normalizeReasonCodes,
   type ModerationFinding,
   REASON_CODES,
+  type ScannerModerationVerdict,
   summarizeReasonCodes,
   type ModerationVerdict,
   verdictFromCodes,
@@ -23,7 +24,7 @@ export type StaticScanInput = {
 }
 
 export type StaticScanResult = {
-  status: ModerationVerdict
+  status: ScannerModerationVerdict
   reasonCodes: string[]
   findings: ModerationFinding[]
   summary: string
@@ -32,7 +33,7 @@ export type StaticScanResult = {
 }
 
 export type ModerationSnapshot = {
-  verdict: ModerationVerdict
+  verdict: ScannerModerationVerdict
   reasonCodes: string[]
   evidence: ModerationFinding[]
   summary: string

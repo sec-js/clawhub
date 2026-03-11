@@ -24,6 +24,8 @@ type SkillDetailTabsProps = {
   diffVersions: Doc<'skillVersions'>[] | undefined
   versions: Doc<'skillVersions'>[] | undefined
   nixPlugin: boolean
+  suppressVersionScanResults: boolean
+  scanResultsSuppressedMessage: string | null
 }
 
 export function SkillDetailTabs({
@@ -38,6 +40,8 @@ export function SkillDetailTabs({
   diffVersions,
   versions,
   nixPlugin,
+  suppressVersionScanResults,
+  scanResultsSuppressedMessage,
 }: SkillDetailTabsProps) {
   return (
     <div className="card tab-card">
@@ -93,7 +97,13 @@ export function SkillDetailTabs({
       ) : null}
 
       {activeTab === 'versions' ? (
-        <SkillVersionsPanel versions={versions} nixPlugin={nixPlugin} skillSlug={skill.slug} />
+        <SkillVersionsPanel
+          versions={versions}
+          nixPlugin={nixPlugin}
+          skillSlug={skill.slug}
+          suppressScanResults={suppressVersionScanResults}
+          suppressedMessage={scanResultsSuppressedMessage}
+        />
       ) : null}
     </div>
   )

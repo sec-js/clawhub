@@ -139,6 +139,12 @@ export function SkillDetailPage({
   const forkOf = result?.forkOf ?? null
   const canonical = result?.canonical ?? null
   const modInfo = result?.moderationInfo ?? null
+  const suppressVersionScanResults =
+    !isStaff && Boolean(modInfo?.overrideActive) && !modInfo?.isMalwareBlocked && !modInfo?.isSuspicious
+  const scanResultsSuppressedMessage =
+    suppressVersionScanResults
+      ? 'Security findings on these releases were reviewed by staff and cleared for public use.'
+      : null
   const forkOfLabel = forkOf?.kind === 'duplicate' ? 'duplicate of' : 'fork of'
   const forkOfOwnerHandle = forkOf?.owner?.handle ?? null
   const forkOfOwnerId = forkOf?.owner?.userId ?? null
@@ -384,6 +390,8 @@ export function SkillDetailPage({
           diffVersions={diffVersions}
           versions={versions}
           nixPlugin={Boolean(nixPlugin)}
+          suppressVersionScanResults={suppressVersionScanResults}
+          scanResultsSuppressedMessage={scanResultsSuppressedMessage}
         />
 
         <SkillCommentsPanel skillId={skill._id} isAuthenticated={isAuthenticated} me={me ?? null} />

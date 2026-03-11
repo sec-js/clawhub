@@ -56,6 +56,7 @@ import type * as lib_globalStats from "../lib/globalStats.js";
 import type * as lib_httpHeaders from "../lib/httpHeaders.js";
 import type * as lib_httpRateLimit from "../lib/httpRateLimit.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
+import type * as lib_manualOverrides from "../lib/manualOverrides.js";
 import type * as lib_moderation from "../lib/moderation.js";
 import type * as lib_moderationEngine from "../lib/moderationEngine.js";
 import type * as lib_moderationReasonCodes from "../lib/moderationReasonCodes.js";
@@ -155,6 +156,7 @@ declare const fullApi: ApiFromModules<{
   "lib/httpHeaders": typeof lib_httpHeaders;
   "lib/httpRateLimit": typeof lib_httpRateLimit;
   "lib/leaderboards": typeof lib_leaderboards;
+  "lib/manualOverrides": typeof lib_manualOverrides;
   "lib/moderation": typeof lib_moderation;
   "lib/moderationEngine": typeof lib_moderationEngine;
   "lib/moderationReasonCodes": typeof lib_moderationReasonCodes;

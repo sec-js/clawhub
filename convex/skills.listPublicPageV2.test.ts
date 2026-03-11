@@ -48,8 +48,8 @@ describe('skills.listPublicPageV2', () => {
   })
 
   it('applies highlightedOnly and nonSuspiciousOnly together', async () => {
-    // With both flags, the nonsuspicious index handles isSuspicious at DB level,
-    // and highlightedOnly is applied as a JS filter on top.
+    // Keep pagination on the base sort index and apply both filters in JS while
+    // `isSuspicious` is still being backfilled on existing rows.
     const highlightedClean = makeSkill('skills:hl-clean', 'hl-clean', 'users:1', 'skillVersions:1')
     const plainClean = makeSkill('skills:plain', 'plain', 'users:2', 'skillVersions:2')
 
@@ -93,7 +93,7 @@ describe('skills.listPublicPageV2', () => {
     expect(result.page[0]?.skill.slug).toBe('hl-clean')
     expect(result.continueCursor).toBe('next-cursor')
     expect(result.isDone).toBe(false)
-    expect(withIndexMock).toHaveBeenCalledWith('by_nonsuspicious_downloads', expect.any(Function))
+    expect(withIndexMock).toHaveBeenCalledWith('by_active_stats_downloads', expect.any(Function))
     expect(orderMock).toHaveBeenCalledWith('desc')
     expect(paginateMock).toHaveBeenCalledWith({ cursor: null, numItems: 25 })
   })
@@ -183,10 +183,17 @@ describe('skills.listPublicPageV2', () => {
     expect(paginateMock).toHaveBeenCalledTimes(1)
   })
 
-  it('uses nonsuspicious index when nonSuspiciousOnly is true', async () => {
+  it('uses the base index and filters suspicious rows in JS when nonSuspiciousOnly is true', async () => {
     const clean = makeSkill('skills:clean', 'clean', 'users:1', 'skillVersions:1')
+    const suspicious = makeSkill(
+      'skills:suspicious',
+      'suspicious',
+      'users:2',
+      'skillVersions:2',
+      ['flagged.suspicious'],
+    )
     const paginateMock = vi.fn().mockResolvedValueOnce({
-      page: [clean],
+      page: [suspicious, clean],
       continueCursor: 'after-clean',
       isDone: false,
       pageStatus: null,
@@ -221,7 +228,7 @@ describe('skills.listPublicPageV2', () => {
     expect(result.continueCursor).toBe('after-clean')
     expect(result.isDone).toBe(false)
     expect(withIndexMock).toHaveBeenCalledTimes(1)
-    expect(withIndexMock).toHaveBeenCalledWith('by_nonsuspicious_downloads', expect.any(Function))
+    expect(withIndexMock).toHaveBeenCalledWith('by_active_stats_downloads', expect.any(Function))
     expect(paginateMock).toHaveBeenCalledTimes(1)
   })
 
