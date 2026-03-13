@@ -15,6 +15,26 @@ const { getAuthUserId } = await import('@convex-dev/auth/server')
 const { getSkillBadgeMap } = await import('./lib/badges')
 const { getBySlug } = await import('./skills')
 
+type WrappedHandler<TArgs, TResult = unknown> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>
+}
+
+const getBySlugHandler = (
+  getBySlug as unknown as WrappedHandler<{
+    slug: string
+  }, {
+    owner?: {
+      _id: string
+      _creationTime: number
+      handle: string | null
+      name: string | null
+      displayName: string | null
+      image: string | null
+      bio?: string | null
+    } | null
+  } | null>
+)._handler
+
 function makeCtx(args: {
   skill: Record<string, unknown> | null
   owner: Record<string, unknown> | null
@@ -86,7 +106,7 @@ describe('skills.getBySlug', () => {
       },
     })
 
-    const result = await getBySlug._handler(ctx, { slug: 'demo' } as never)
+    const result = await getBySlugHandler(ctx, { slug: 'demo' } as never)
 
     expect(result?.owner).toEqual({
       _id: 'users:1',
