@@ -216,20 +216,24 @@ function makeTrendingCtx({
               order: vi.fn((dir: string) => {
                 if (dir !== 'desc') throw new Error(`unexpected order ${dir}`)
                 return {
-                  take: vi.fn().mockResolvedValue([
-                    {
-                      kind: requestedKind,
-                      generatedAt: 1,
-                      rangeStartDay: 1,
-                      rangeEndDay: 1,
-                      items: (leaderboards[requestedKind] ?? []).map((skillId, idx) => ({
-                        skillId,
-                        score: 100 - idx,
-                        installs: 10 - idx,
-                        downloads: 20 - idx,
-                      })),
-                    },
-                  ]),
+                  take: vi.fn().mockResolvedValue(
+                    leaderboards[requestedKind] !== undefined
+                      ? [
+                          {
+                            kind: requestedKind,
+                            generatedAt: 1,
+                            rangeStartDay: 1,
+                            rangeEndDay: 1,
+                            items: leaderboards[requestedKind].map((skillId, idx) => ({
+                              skillId,
+                              score: 100 - idx,
+                              installs: 10 - idx,
+                              downloads: 20 - idx,
+                            })),
+                          },
+                        ]
+                      : [],
+                  ),
                 }
               }),
             }
