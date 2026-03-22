@@ -459,10 +459,23 @@ function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: Doc<"users"> |
   return `${base} Existing skill: ${url}`;
 }
 
+function normalizeSkillSlugKey(slug: string) {
+  return slug.trim().toLowerCase();
+}
+
+function normalizeSkillSlugForWrite(slug: string) {
+  const normalized = normalizeSkillSlugKey(slug);
+  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
+    throw new ConvexError("Slug must be lowercase and url-safe");
+  }
+  return normalized;
+}
+
 async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
+  const normalizedSlug = normalizeSkillSlugKey(slug);
   return ctx.db
     .query("skillSlugAliases")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
     .unique();
 }
 
@@ -477,7 +490,7 @@ async function listSkillSlugAliasesForSkill(
 }
 
 async function resolveSkillBySlugOrAlias(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
-  const normalizedSlug = slug.trim().toLowerCase();
+  const normalizedSlug = normalizeSkillSlugKey(slug);
   if (!normalizedSlug) {
     return {
       requestedSlug: normalizedSlug,
@@ -1439,7 +1452,7 @@ export const checkSlugAvailability = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    const slug = args.slug.trim().toLowerCase();
+    const slug = normalizeSkillSlugKey(args.slug);
     if (!slug) {
       return {
         available: false,
@@ -5561,6 +5574,7 @@ export const insertVersion = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId;
+    const slug = normalizeSkillSlugForWrite(args.slug);
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
 
@@ -5568,11 +5582,11 @@ export const insertVersion = internalMutation({
 
     let skill = await ctx.db
       .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique();
 
     if (!skill) {
-      const alias = await getSkillSlugAliasBySlug(ctx, args.slug);
+      const alias = await getSkillSlugAliasBySlug(ctx, slug);
       if (alias) {
         const aliasedSkill = await ctx.db.get(alias.skillId);
         const owner = aliasedSkill ? await ctx.db.get(aliasedSkill.ownerUserId) : null;
@@ -5667,7 +5681,7 @@ export const insertVersion = internalMutation({
     if (!skill) {
       // Anti-squatting: enforce reserved slug cooldown.
       await enforceReservedSlugCooldownForNewSkill(ctx, {
-        slug: args.slug,
+        slug,
         userId,
         now,
       });
@@ -5719,7 +5733,7 @@ export const insertVersion = internalMutation({
       const summaryValue = summary ?? undefined;
       const derivedFlags = deriveModerationFlags({
         skill: {
-          slug: args.slug,
+          slug,
           displayName: args.displayName,
           summary: summaryValue,
         },
@@ -5730,7 +5744,7 @@ export const insertVersion = internalMutation({
         new Set([...(derivedFlags ?? []), ...(staticSnapshot.legacyFlags ?? [])]),
       );
       const skillId = await ctx.db.insert("skills", {
-        slug: args.slug,
+        slug,
         displayName: args.displayName,
         summary: summaryValue,
         ownerUserId: userId,
