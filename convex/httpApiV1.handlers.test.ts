@@ -2650,7 +2650,7 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("package download metadata uses the owner user id", async () => {
+  it("package download uses a package/ root without registry metadata", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
@@ -2685,6 +2685,13 @@ describe("httpApiV1 handlers", () => {
               storageId: "storage:1",
               contentType: "application/json",
             },
+            {
+              path: "dist/index.js",
+              size: 17,
+              sha256: "b".repeat(64),
+              storageId: "storage:2",
+              contentType: "text/javascript",
+            },
           ],
         };
       }
@@ -2696,15 +2703,20 @@ describe("httpApiV1 handlers", () => {
         runQuery,
         runMutation,
         storage: {
-          get: vi.fn().mockResolvedValue(new Blob(["{}"], { type: "application/json" })),
+          get: vi.fn(async (storageId: string) => {
+            if (storageId === "storage:1") {
+              return new Blob(["{}"], { type: "application/json" });
+            }
+            return new Blob(["export default {}"], { type: "text/javascript" });
+          }),
         },
       }),
       new Request("https://example.com/api/v1/packages/demo-plugin/download"),
     );
 
     const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    const meta = JSON.parse(new TextDecoder().decode(zipEntries["_meta.json"]));
-    expect(meta.ownerId).toBe("users:owner");
+    expect(Object.keys(zipEntries).sort()).toEqual(["package/dist/index.js", "package/package.json"]);
+    expect(zipEntries["_meta.json"]).toBeUndefined();
   });
 
   it("package download fails when any stored file is missing", async () => {

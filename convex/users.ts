@@ -7,6 +7,12 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
+import {
+  getLatestActiveReservedHandle,
+  isHandleReservedForAnotherUser,
+  normalizeReservedHandle,
+  upsertReservedHandleForRightfulOwner,
+} from "./lib/reservedHandles";
 import { buildUserSearchResults } from "./lib/userSearch";
 import { insertStatEvent } from "./skillStatEvents";
 
@@ -78,6 +84,7 @@ export const syncGitHubProfileInternal = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user || user.deletedAt || user.deactivatedAt) return;
+    const canClaimNewHandle = !(await isHandleReservedForAnotherUser(ctx, args.name, args.userId));
 
     const updates: Partial<Doc<"users">> = { githubProfileSyncedAt: args.syncedAt };
     let didChangeProfile = false;
@@ -88,7 +95,7 @@ export const syncGitHubProfileInternal = internalMutation({
     }
 
     // Update handle if it was derived from the old username
-    if (user.handle === user.name && user.name !== args.name) {
+    if (user.handle === user.name && user.name !== args.name && canClaimNewHandle) {
       updates.handle = args.name;
       didChangeProfile = true;
     }
@@ -96,7 +103,8 @@ export const syncGitHubProfileInternal = internalMutation({
     // Update displayName if it was derived from the old username
     if (
       (user.displayName === user.name || user.displayName === user.handle) &&
-      user.name !== args.name
+      user.name !== args.name &&
+      canClaimNewHandle
     ) {
       updates.displayName = args.name;
       didChangeProfile = true;
@@ -168,16 +176,20 @@ function deriveHandle(args: { existingHandle?: string; githubLogin?: string; ema
   return undefined;
 }
 
-function computeEnsureUpdates(user: Doc<"users">) {
+async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
   const updates: Record<string, unknown> = {};
 
   const existingHandle = normalizeHandle(user.handle);
   const githubLogin = normalizeHandle(user.name);
-  const derivedHandle = deriveHandle({
+  const requestedHandle = deriveHandle({
     existingHandle,
     githubLogin,
     email: user.email,
   });
+  const derivedHandle =
+    requestedHandle && !(await isHandleReservedForAnotherUser(ctx, requestedHandle, user._id))
+      ? requestedHandle
+      : undefined;
   const baseHandle = derivedHandle ?? existingHandle;
 
   if (derivedHandle && existingHandle !== derivedHandle) {
@@ -202,7 +214,7 @@ function computeEnsureUpdates(user: Doc<"users">) {
 
 export async function ensureHandler(ctx: MutationCtx) {
   const { userId, user } = await requireUser(ctx);
-  const updates = computeEnsureUpdates(user);
+  const updates = await computeEnsureUpdates(ctx, user);
 
   if (Object.keys(updates).length > 0) {
     updates.updatedAt = Date.now();
@@ -323,6 +335,13 @@ export const getByHandle = query({
   },
 });
 
+export const getReservedHandleInternal = internalQuery({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    return await getLatestActiveReservedHandle(ctx, args.handle);
+  },
+});
+
 export const setRole = mutation({
   args: {
     userId: v.id("users"),
@@ -331,6 +350,63 @@ export const setRole = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     return setRoleWithActor(ctx, user, args.userId, args.role);
+  },
+});
+
+export const reserveHandleInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    rightfulOwnerUserId: v.id("users"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
+
+    const rightfulOwner = await ctx.db.get(args.rightfulOwnerUserId);
+    if (!rightfulOwner || rightfulOwner.deletedAt || rightfulOwner.deactivatedAt) {
+      throw new Error("Rightful owner not found");
+    }
+
+    const normalizedHandle = normalizeReservedHandle(args.handle);
+    if (!normalizedHandle) throw new Error("Handle required");
+
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", normalizedHandle))
+      .unique();
+    if (existingUser && existingUser._id !== args.rightfulOwnerUserId) {
+      throw new Error("Handle already claimed by another user");
+    }
+
+    const now = Date.now();
+    await upsertReservedHandleForRightfulOwner(ctx, {
+      handle: normalizedHandle,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      reason: args.reason,
+      now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "handle.reserve",
+      targetType: "handle",
+      targetId: normalizedHandle,
+      metadata: {
+        handle: normalizedHandle,
+        rightfulOwnerUserId: args.rightfulOwnerUserId,
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      handle: normalizedHandle,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+    };
   },
 });
 

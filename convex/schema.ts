@@ -1055,6 +1055,18 @@ const reservedSlugs = defineTable({
   .index("by_owner", ["originalOwnerUserId"])
   .index("by_expiry", ["expiresAt"]);
 
+const reservedHandles = defineTable({
+  handle: v.string(),
+  rightfulOwnerUserId: v.id("users"),
+  reason: v.optional(v.string()),
+  releasedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_handle", ["handle"])
+  .index("by_handle_active_updatedAt", ["handle", "releasedAt", "updatedAt"])
+  .index("by_owner", ["rightfulOwnerUserId"]);
+
 const githubBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
@@ -1160,6 +1172,7 @@ export default defineSchema({
   rateLimits,
   downloadDedupes,
   reservedSlugs,
+  reservedHandles,
   githubBackupSyncState,
   userSyncRoots,
   userSkillInstalls,

@@ -11,13 +11,48 @@ vi.mock("./skillStatEvents", () => ({
 
 const { requireUser } = await import("./lib/access");
 const { insertStatEvent } = await import("./skillStatEvents");
-const { ensureHandler, list, searchInternal, banUserInternal, placeUserUnderModerationInternal } =
-  await import("./users");
+const {
+  ensureHandler,
+  list,
+  searchInternal,
+  banUserInternal,
+  placeUserUnderModerationInternal,
+  reserveHandleInternal,
+  syncGitHubProfileInternal,
+} = await import("./users");
 
 function makeCtx() {
   const patch = vi.fn();
   const get = vi.fn();
-  return { ctx: { db: { patch, get, normalizeId: vi.fn() } } as never, patch, get };
+  const insert = vi.fn();
+  const query = vi.fn((table: string) => {
+    if (table === "reservedHandles") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_handle_active_updatedAt") {
+            throw new Error(`Unexpected reservedHandles index ${name}`);
+          }
+          return { order: () => ({ take: vi.fn(async () => []) }) };
+        },
+      };
+    }
+    if (table === "users") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+          return { unique: vi.fn(async () => null) };
+        },
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+  return {
+    ctx: { db: { patch, get, insert, query, normalizeId: vi.fn() } } as never,
+    patch,
+    get,
+    insert,
+    query,
+  };
 }
 
 function makeListCtx(users: Array<Record<string, unknown>>) {
@@ -229,6 +264,111 @@ describe("ensureHandler", () => {
       createdAt: 1,
       updatedAt: expect.any(Number),
     });
+  });
+
+  it("does not auto-claim a reserved handle for another user", async () => {
+    const { ctx, patch, query } = makeCtx();
+    query.mockImplementation(((table: string) => {
+      if (table !== "reservedHandles") throw new Error(`Unexpected table ${table}`);
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_handle_active_updatedAt") {
+            throw new Error(`Unexpected reservedHandles index ${name}`);
+          }
+          return {
+            order: () => ({
+              take: async () => [
+                {
+                  _id: "reservedHandles:1",
+                  handle: "openclaw",
+                  rightfulOwnerUserId: "users:owner",
+                  releasedAt: undefined,
+                  createdAt: 1,
+                  updatedAt: 2,
+                },
+              ],
+            }),
+          };
+        },
+      };
+    }) as never);
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:other",
+      user: {
+        _id: "users:other",
+        _creationTime: 1,
+        handle: undefined,
+        displayName: undefined,
+        name: "openclaw",
+        email: undefined,
+        role: "user",
+        createdAt: 1,
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("users.syncGitHubProfileInternal", () => {
+  it("keeps a derived handle unchanged when the new login is reserved", async () => {
+    const { ctx, get, patch, query } = makeCtx();
+    get.mockResolvedValue({
+      _id: "users:other",
+      handle: "old-handle",
+      displayName: "old-handle",
+      name: "old-handle",
+    });
+    query.mockImplementation(((table: string) => {
+      if (table !== "reservedHandles") throw new Error(`Unexpected table ${table}`);
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_handle_active_updatedAt") {
+            throw new Error(`Unexpected reservedHandles index ${name}`);
+          }
+          return {
+            order: () => ({
+              take: async () => [
+                {
+                  _id: "reservedHandles:1",
+                  handle: "openclaw",
+                  rightfulOwnerUserId: "users:owner",
+                  releasedAt: undefined,
+                  createdAt: 1,
+                  updatedAt: 2,
+                },
+              ],
+            }),
+          };
+        },
+      };
+    }) as never);
+
+    const handler = (
+      syncGitHubProfileInternal as unknown as {
+        _handler: (ctx: unknown, args: unknown) => Promise<void>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      userId: "users:other",
+      name: "openclaw",
+      syncedAt: 10,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({
+        githubProfileSyncedAt: 10,
+        name: "openclaw",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({ handle: "openclaw" }),
+    );
   });
 });
 
@@ -699,6 +839,81 @@ describe("users.placeUserUnderModerationInternal", () => {
           reason: "malicious.install_terminal_payload",
           hiddenSkills: 3,
         }),
+      }),
+    );
+  });
+});
+
+describe("users.reserveHandleInternal", () => {
+  it("reserves a handle for the rightful owner", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, insert, query } = makeCtx();
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+      if (id === "users:owner") return { _id: "users:owner", role: "user" };
+      return null;
+    });
+    query.mockImplementation(((table: string) => {
+      if (table === "reservedHandles") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_handle_active_updatedAt") {
+              throw new Error(`Unexpected reservedHandles index ${name}`);
+            }
+            return { order: () => ({ take: async () => [] }) };
+          },
+        };
+      }
+      if (table === "users") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+            return { unique: vi.fn(async () => null) };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    }) as never);
+
+    const handler = (
+      reserveHandleInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            actorUserId: string;
+            handle: string;
+            rightfulOwnerUserId: string;
+            reason?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      actorUserId: "users:admin",
+      handle: "OpenClaw",
+      rightfulOwnerUserId: "users:owner",
+      reason: "official org",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      handle: "openclaw",
+      rightfulOwnerUserId: "users:owner",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "reservedHandles",
+      expect.objectContaining({
+        handle: "openclaw",
+        rightfulOwnerUserId: "users:owner",
+        reason: "official org",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "handle.reserve",
+        targetId: "openclaw",
       }),
     );
   });

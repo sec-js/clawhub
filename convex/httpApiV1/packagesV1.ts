@@ -6,7 +6,7 @@ import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { buildDeterministicZip } from "../lib/skillZip";
+import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
 import {
   MAX_RAW_FILE_BYTES,
@@ -1002,12 +1002,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         bytes: new Uint8Array(await blob.arrayBuffer()),
       });
     }
-    const zip = buildDeterministicZip(entries, {
-      ownerId: String(packageOwner?._id ?? ""),
-      slug: publicPackage!.name.replaceAll("/", "-"),
-      version: release.version,
-      publishedAt: release.createdAt,
-    });
+    const zip = buildDeterministicPackageZip(entries);
     return new Response(new Blob([zip], { type: "application/zip" }), {
       status: 200,
       headers: mergeHeaders(

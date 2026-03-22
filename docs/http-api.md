@@ -352,7 +352,7 @@ Notes:
 
 ### `GET /api/v1/packages/{name}/download`
 
-Downloads a deterministic zip for a package release.
+Downloads a deterministic package archive for a package release.
 
 Query params:
 
@@ -363,6 +363,8 @@ Notes:
 
 - Defaults to the latest release.
 - Skills redirect to `GET /api/v1/download`.
+- Plugin/package archives are zip files with a `package/` root so they install directly in OpenClaw without repacking.
+- Registry-only metadata is not injected into the downloaded archive.
 - Private packages return `404` unless the caller is the owner.
 
 ### `GET /api/v1/resolve`

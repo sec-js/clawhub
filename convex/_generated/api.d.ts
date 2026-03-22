@@ -68,6 +68,7 @@ import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_reporting from "../lib/reporting.js";
+import type * as lib_reservedHandles from "../lib/reservedHandles.js";
 import type * as lib_reservedSlugs from "../lib/reservedSlugs.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
@@ -175,6 +176,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/public": typeof lib_public;
   "lib/reporting": typeof lib_reporting;
+  "lib/reservedHandles": typeof lib_reservedHandles;
   "lib/reservedSlugs": typeof lib_reservedSlugs;
   "lib/searchText": typeof lib_searchText;
   "lib/securityPrompt": typeof lib_securityPrompt;
