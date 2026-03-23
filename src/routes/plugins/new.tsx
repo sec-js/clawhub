@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { startTransition, useEffect, useMemo, useState } from "react";
+import semver from "semver";
 import { api } from "../../../convex/_generated/api";
 import {
   MAX_PUBLISH_FILE_BYTES,
@@ -12,6 +13,17 @@ import { useAuthStatus } from "../../lib/useAuthStatus";
 import { formatBytes, formatPublishError, hashFile, uploadFile } from "../upload/-utils";
 
 export const Route = createFileRoute("/plugins/new")({
+  validateSearch: (search) => ({
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+    name: typeof search.name === "string" ? search.name : undefined,
+    displayName: typeof search.displayName === "string" ? search.displayName : undefined,
+    family:
+      search.family === "code-plugin" || search.family === "bundle-plugin"
+        ? search.family
+        : undefined,
+    nextVersion: typeof search.nextVersion === "string" ? search.nextVersion : undefined,
+    sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
+  }),
   component: PublishPluginRoute,
 });
 
@@ -22,6 +34,7 @@ const apiRefs = api as unknown as {
 };
 
 function PublishPluginRoute() {
+  const search = Route.useSearch();
   const { isAuthenticated } = useAuthStatus();
   const publishers = useQuery(api.publishers.listMine) as
     | Array<{
@@ -38,13 +51,15 @@ function PublishPluginRoute() {
   const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (
     args: { payload: unknown },
   ) => Promise<unknown>;
-  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">("code-plugin");
-  const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [ownerHandle, setOwnerHandle] = useState("");
-  const [version, setVersion] = useState("0.1.0");
+  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">(
+    search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+  );
+  const [name, setName] = useState(search.name ?? "");
+  const [displayName, setDisplayName] = useState(search.displayName ?? "");
+  const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
+  const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
-  const [sourceRepo, setSourceRepo] = useState("");
+  const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
   const [sourceRef, setSourceRef] = useState("");
   const [sourcePath, setSourcePath] = useState(".");
@@ -106,7 +121,7 @@ function PublishPluginRoute() {
     <main className="section">
       <header className="skills-header-top">
         <h1 className="section-title" style={{ marginBottom: 8 }}>
-          Publish Plugin
+          {search.name ? "Publish Plugin Release" : "Publish Plugin"}
         </h1>
         <p className="section-subtitle" style={{ marginBottom: 0 }}>
           Upload a native code plugin or bundle plugin release.
@@ -114,6 +129,12 @@ function PublishPluginRoute() {
         <p className="section-subtitle" style={{ marginBottom: 0 }}>
           New releases stay private until automated security checks and verification finish.
         </p>
+        {search.name ? (
+          <p className="section-subtitle" style={{ marginBottom: 0 }}>
+            Prefilled for {search.displayName ?? search.name}
+            {search.nextVersion && semver.valid(search.nextVersion) ? ` · suggested ${search.nextVersion}` : ""}
+          </p>
+        ) : null}
       </header>
       <div className="card" style={{ display: "grid", gap: 12 }}>
         {!isAuthenticated ? <div>Log in to publish plugins.</div> : null}

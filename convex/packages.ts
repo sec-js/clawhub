@@ -193,6 +193,7 @@ type DashboardPackageListItem = {
   channel: PackageChannel;
   isOfficial: boolean;
   runtimeId: string | null;
+  sourceRepo: string | null;
   summary: string | null;
   ownerUserId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
@@ -324,6 +325,7 @@ async function toDashboardPackageListItem(
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     runtimeId: pkg.runtimeId ?? null,
+    sourceRepo: pkg.sourceRepo ?? null,
     summary: pkg.summary ?? null,
     ownerUserId: pkg.ownerUserId,
     ownerPublisherId: pkg.ownerPublisherId,

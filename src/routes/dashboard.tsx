@@ -11,11 +11,21 @@ import {
   Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import semver from "semver";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { formatCompactStat } from "../lib/numberFormat";
 import { familyLabel } from "../lib/packageLabels";
 import type { PublicSkill } from "../lib/publicUser";
+
+const emptyPluginPublishSearch = {
+  ownerHandle: undefined,
+  name: undefined,
+  displayName: undefined,
+  family: undefined,
+  nextVersion: undefined,
+  sourceRepo: undefined,
+} as const;
 
 type DashboardSkill = PublicSkill & { pendingReview?: boolean };
 
@@ -27,6 +37,7 @@ type DashboardPackage = {
   channel: "official" | "community" | "private";
   isOfficial: boolean;
   runtimeId?: string | null;
+  sourceRepo?: string | null;
   summary?: string | null;
   latestVersion?: string | null;
   stats: {
@@ -139,30 +150,33 @@ function Dashboard() {
             <Plus className="h-4 w-4" aria-hidden="true" />
             Upload Skill
           </Link>
-          <Link to="/plugins/new" className="btn">
+          <Link
+            to="/plugins/new"
+            search={{ ...emptyPluginPublishSearch, ownerHandle }}
+            className="btn"
+          >
             <Plug className="h-4 w-4" aria-hidden="true" />
             Publish Plugin
           </Link>
         </div>
       </div>
 
-      <div className="dashboard-sections">
-        <section className="dashboard-section">
+      <section className="card dashboard-owner-panel">
+        <div className="dashboard-owner-grid">
+          <section className="dashboard-collection-block">
           <div className="dashboard-section-header">
             <div>
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Publisher Skills
-              </h2>
+              <h2 className="dashboard-collection-title">Publisher Skills</h2>
               <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
                 Hidden skill versions remain visible here while checks are pending.
               </p>
             </div>
           </div>
           {skills.length === 0 ? (
-            <div className="card dashboard-empty">
-              <Package className="dashboard-empty-icon" aria-hidden="true" />
-              <h2>No skills yet</h2>
-              <p>Upload your first skill to share it with the community.</p>
+            <div className="dashboard-inline-empty">
+              <div className="dashboard-inline-empty-copy">
+                <strong>No skills yet.</strong> Upload your first skill to share it with the community.
+              </div>
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
                 <Upload className="h-4 w-4" aria-hidden="true" />
                 Upload a Skill
@@ -175,25 +189,27 @@ function Dashboard() {
               ))}
             </div>
           )}
-        </section>
+          </section>
 
-        <section className="dashboard-section">
+          <section className="dashboard-collection-block">
           <div className="dashboard-section-header">
             <div>
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Publisher Plugins
-              </h2>
+              <h2 className="dashboard-collection-title">Publisher Plugins</h2>
               <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
                 Owner-only package view with VirusTotal, static scan, and verification state.
               </p>
             </div>
           </div>
           {packages.length === 0 ? (
-            <div className="card dashboard-empty">
-              <Plug className="dashboard-empty-icon" aria-hidden="true" />
-              <h2>No plugins yet</h2>
-              <p>Publish your first plugin release to validate and distribute it.</p>
-              <Link to="/plugins/new" className="btn btn-primary">
+            <div className="dashboard-inline-empty">
+              <div className="dashboard-inline-empty-copy">
+                <strong>No plugins yet.</strong> Publish your first plugin release to validate and distribute it.
+              </div>
+              <Link
+                to="/plugins/new"
+                search={{ ...emptyPluginPublishSearch, ownerHandle }}
+                className="btn btn-primary"
+              >
                 <Plug className="h-4 w-4" aria-hidden="true" />
                 Publish a Plugin
               </Link>
@@ -201,12 +217,13 @@ function Dashboard() {
           ) : (
             <div className="dashboard-grid">
               {packages.map((pkg) => (
-                <PackageCard key={pkg._id} pkg={pkg} />
+                <PackageCard key={pkg._id} pkg={pkg} ownerHandle={ownerHandle} />
               ))}
             </div>
           )}
-        </section>
-      </div>
+          </section>
+        </div>
+      </section>
     </main>
   );
 }
@@ -307,8 +324,9 @@ function PackageStatusTag({
   return <span className={className}>{label}</span>;
 }
 
-function PackageCard({ pkg }: { pkg: DashboardPackage }) {
+function PackageCard({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
   const scanLabel = scanStatusLabel(pkg.scanStatus);
+  const nextVersion = pkg.latestVersion ? semver.inc(pkg.latestVersion, "patch") : null;
   const scanTone =
     pkg.scanStatus === "pending"
       ? "pending"
@@ -379,9 +397,20 @@ function PackageCard({ pkg }: { pkg: DashboardPackage }) {
         </div>
       </div>
       <div className="dashboard-skill-actions">
-        <Link to="/plugins/new" className="btn btn-sm">
+        <Link
+          to="/plugins/new"
+          search={{
+            ownerHandle,
+            name: pkg.name,
+            displayName: pkg.displayName,
+            family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+            nextVersion: nextVersion ?? undefined,
+            sourceRepo: pkg.sourceRepo ?? undefined,
+          }}
+          className="btn btn-sm"
+        >
           <Upload className="h-3 w-3" aria-hidden="true" />
-          Publish
+          New Release
         </Link>
         <Link to="/plugins/$name" params={{ name: pkg.name }} className="btn btn-ghost btn-sm">
           View

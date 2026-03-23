@@ -177,7 +177,18 @@ export function PluginsIndex() {
           >
             Executes code
           </button>
-          <Link className="btn btn-primary" to="/plugins/new">
+          <Link
+            className="btn btn-primary"
+            to="/plugins/new"
+            search={{
+              ownerHandle: undefined,
+              name: undefined,
+              displayName: undefined,
+              family: undefined,
+              nextVersion: undefined,
+              sourceRepo: undefined,
+            }}
+          >
             Publish
           </Link>
         </div>
