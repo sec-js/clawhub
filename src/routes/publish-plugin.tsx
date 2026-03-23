@@ -72,6 +72,7 @@ function PublishPluginRoute() {
   const [hostTargets, setHostTargets] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
+  const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -90,6 +91,10 @@ function PublishPluginRoute() {
   const normalizedPaths = useMemo(
     () => normalizePackageUploadFiles(files).map((entry) => entry.path),
     [files],
+  );
+  const normalizedPathSet = useMemo(
+    () => new Set(normalizedPaths.map((path) => path.toLowerCase())),
+    [normalizedPaths],
   );
   const oversizedFiles = useMemo(
     () => files.filter((file) => file.size > MAX_PUBLISH_FILE_BYTES),
@@ -120,6 +125,7 @@ function PublishPluginRoute() {
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
     const prefill = await derivePluginPrefill(normalized);
+    setDetectedPrefillFields(listPrefilledFields(prefill));
     if (prefill.family) setFamily(prefill.family);
     if (prefill.name) setName(prefill.name);
     if (prefill.displayName) setDisplayName(prefill.displayName);
@@ -247,20 +253,40 @@ function PublishPluginRoute() {
           </div>
         </div>
 
-        <div className="upload-file-list">
+        <div className={`plugin-upload-summary${isMetadataLocked ? "" : " is-ready"}`}>
           {normalizedPaths.length === 0 ? (
             <div className="stat">No plugin package selected yet.</div>
           ) : (
-            normalizedPaths.map((path) => (
-              <div key={path} className="upload-file-row">
-                <span>{path}</span>
+            <>
+              <div className="plugin-upload-summary-row">
+                <strong>Package detected</strong>
+                <span className="upload-dropzone-count">
+                  {files.length} files · {formatBytes(totalBytes)}
+                </span>
               </div>
-            ))
+              <div className="plugin-upload-summary-copy">
+                {detectedPrefillFields.length > 0
+                  ? `Autofilled ${detectedPrefillFields.join(", ")}.`
+                  : "Package files were detected. Review and fill the release details below."}
+              </div>
+              <div className="plugin-upload-summary-tags">
+                {normalizedPathSet.has("package.json") ? <span className="tag">Package manifest</span> : null}
+                {normalizedPathSet.has("openclaw.plugin.json") ? (
+                  <span className="tag">Plugin manifest</span>
+                ) : null}
+                {normalizedPathSet.has("openclaw.bundle.json") ? (
+                  <span className="tag">Bundle manifest</span>
+                ) : null}
+                {normalizedPathSet.has("readme.md") || normalizedPathSet.has("readme.mdx") ? (
+                  <span className="tag">README</span>
+                ) : null}
+                {ignoredPaths.length > 0 ? (
+                  <span className="tag">Ignored {ignoredPaths.length} files</span>
+                ) : null}
+              </div>
+            </>
           )}
         </div>
-        {ignoredPaths.length > 0 ? (
-          <div className="tag">Ignored {ignoredPaths.length} files via ignore rules.</div>
-        ) : null}
         {validationError ? <div className="tag tag-accent">{validationError}</div> : null}
       </div>
 
@@ -270,10 +296,10 @@ function PublishPluginRoute() {
         aria-disabled={isMetadataLocked}
       >
         {!isAuthenticated ? <div>Log in to publish plugins.</div> : null}
-        <div className="plugin-publish-lock-note">
+        <div className={`plugin-publish-lock-note${isMetadataLocked ? "" : " is-ready"}`}>
           {isMetadataLocked
             ? "Upload plugin code to detect the package shape and unlock the release form."
-            : "Detected metadata is ready. Review it, then fill any missing release details."}
+            : "Metadata detected and prefilled. Review it, then fill any missing release details."}
         </div>
         <select
           className="input"
@@ -489,10 +515,18 @@ async function readJsonUploadFile(
   files: Array<{ file: File; path: string }>,
   expectedPath: string,
 ): Promise<JsonRecord | null> {
-  const entry = files.find((file) => file.path.toLowerCase() === expectedPath);
+  const normalizedExpectedPath = expectedPath.toLowerCase();
+  const expectedFileName = normalizedExpectedPath.split("/").at(-1);
+  const entry =
+    files.find((file) => file.path.toLowerCase() === normalizedExpectedPath) ??
+    files.find((file) => file.path.toLowerCase().endsWith(`/${normalizedExpectedPath}`)) ??
+    files.find((file) => {
+      const normalizedPath = file.path.toLowerCase();
+      return expectedFileName ? normalizedPath.split("/").at(-1) === expectedFileName : false;
+    });
   if (!entry) return null;
   try {
-    const parsed = JSON.parse(await entry.file.text()) as unknown;
+    const parsed = JSON.parse((await entry.file.text()).replace(/^\uFEFF/, "")) as unknown;
     return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
@@ -528,6 +562,10 @@ function extractSourceRepo(packageJson: JsonRecord | null) {
   if (isRecord(repository) && typeof repository.url === "string") {
     return normalizeGitHubRepo(repository.url);
   }
+  if (typeof packageJson.homepage === "string") return normalizeGitHubRepo(packageJson.homepage);
+  if (isRecord(packageJson.bugs) && typeof packageJson.bugs.url === "string") {
+    return normalizeGitHubRepo(packageJson.bugs.url);
+  }
   return undefined;
 }
 
@@ -544,11 +582,26 @@ async function derivePluginPrefill(
 
   return {
     family: pluginManifest ? "code-plugin" : bundleManifest ? "bundle-plugin" : undefined,
-    name: getString(packageJson?.name),
-    displayName: getString(packageJson?.displayName),
+    name: getString(packageJson?.name) ?? getString(pluginManifest?.id) ?? getString(bundleManifest?.id),
+    displayName:
+      getString(packageJson?.displayName) ??
+      getString(pluginManifest?.name) ??
+      getString(bundleManifest?.name),
     version: getString(packageJson?.version),
     sourceRepo: extractSourceRepo(packageJson),
     bundleFormat: getString(bundleManifest?.format) ?? getString(openclaw?.bundleFormat),
     hostTargets: hostTargets.length > 0 ? hostTargets.join(", ") : undefined,
   };
+}
+
+function listPrefilledFields(prefill: PluginPublishPrefill) {
+  const fields: string[] = [];
+  if (prefill.family) fields.push("package type");
+  if (prefill.name) fields.push("plugin name");
+  if (prefill.displayName) fields.push("display name");
+  if (prefill.version) fields.push("version");
+  if (prefill.sourceRepo) fields.push("source repo");
+  if (prefill.bundleFormat) fields.push("bundle format");
+  if (prefill.hostTargets) fields.push("host targets");
+  return fields;
 }

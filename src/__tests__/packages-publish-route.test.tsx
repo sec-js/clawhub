@@ -255,6 +255,49 @@ describe("plugins publish route", () => {
     });
   });
 
+  it("prefills metadata from a wrapped GitHub release package", async () => {
+    renderPublishRoute();
+
+    const packageJson = new File(
+      [
+        JSON.stringify({
+          name: "@opik/opik-openclaw",
+          version: "0.2.9",
+          repository: {
+            type: "git",
+            url: "https://github.com/comet-ml/opik-openclaw.git",
+          },
+        }),
+      ],
+      "opik-openclaw-0.2.9/package.json",
+      { type: "application/json" },
+    );
+    const manifest = new File(
+      [JSON.stringify({ id: "opik-openclaw", name: "Opik" })],
+      "opik-openclaw-0.2.9/openclaw.plugin.json",
+      { type: "application/json" },
+    );
+    const readme = new File(
+      ["# Opik OpenClaw\n"],
+      "opik-openclaw-0.2.9/README.md",
+      { type: "text/markdown" },
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("@opik/opik-openclaw")).toBeTruthy();
+      expect(screen.getByDisplayValue("Opik")).toBeTruthy();
+      expect(screen.getByDisplayValue("0.2.9")).toBeTruthy();
+      expect(screen.getByDisplayValue("comet-ml/opik-openclaw")).toBeTruthy();
+      expect(screen.getByText(/Metadata detected and prefilled/i)).toBeTruthy();
+      expect(screen.getByText(/Autofilled package type, plugin name, display name, version, source repo\./i)).toBeTruthy();
+      expect(screen.getByText("Package manifest")).toBeTruthy();
+      expect(screen.getByText("Plugin manifest")).toBeTruthy();
+      expect(screen.queryByText("opik-openclaw-0.2.9/package.json")).toBeNull();
+    });
+  });
+
   it("applies ignore rules before uploading a plugin folder", async () => {
     renderPublishRoute();
 
@@ -290,7 +333,7 @@ describe("plugins publish route", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Ignored 1 files via ignore rules\./)).toBeTruthy();
+      expect(screen.getByText(/Ignored 1 files/i)).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
