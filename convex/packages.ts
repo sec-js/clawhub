@@ -42,6 +42,7 @@ const MAX_PUBLIC_LIST_SCAN_PAGES = 200;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_SEARCH_SCAN_PAGES = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const internalRefs = internal as unknown as {
   llmEval: {
     evaluatePackageReleaseWithLlm: unknown;
@@ -1528,7 +1529,7 @@ async function publishPackageImpl(
     },
   );
 
-  await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+  await runAfterRef(ctx, INITIAL_PACKAGE_VT_SCAN_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
     releaseId: publishResult.releaseId,
   });
   await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {

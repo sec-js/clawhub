@@ -2116,6 +2116,12 @@ describe("packages public queries", () => {
         reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
       }),
     );
+    expect(ctx.scheduler.runAfter).toHaveBeenNthCalledWith(
+      1,
+      30_000,
+      expect.anything(),
+      expect.any(Object),
+    );
   });
 
   it("hides pending-scan packages from public reads", async () => {
