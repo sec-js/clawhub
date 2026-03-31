@@ -3057,24 +3057,6 @@ code {
     row-gap: 8px;
   }
 
-  .management-control input,
-  .management-control select {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .management-search input {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .management-item {
-    grid-template-columns: 1fr;
-  }
-
-  .management-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 520px) {
@@ -4019,7 +4001,7 @@ html.theme-transition::view-transition-new(theme) {
 
 .management-control input,
 .management-control select {
-  min-width: 180px;
+  min-width: min(180px, 100%);
 }
 
 .management-control-stack input,
@@ -4029,7 +4011,7 @@ html.theme-transition::view-transition-new(theme) {
 }
 
 .management-search input {
-  min-width: 240px;
+  min-width: min(240px, 100%);
 }
 
 .management-count {
