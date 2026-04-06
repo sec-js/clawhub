@@ -85,6 +85,7 @@ export function SkillsToolbar({
   onToggleDir,
   onToggleView,
 }: SkillsToolbarProps) {
+<<<<<<< Updated upstream
   const activeCategory = useMemo(() => {
     if (query === "__other__") return "other";
     if (!query) return undefined;
@@ -104,6 +105,10 @@ export function SkillsToolbar({
       onQueryChange("");
     }
   };
+=======
+  const controlSurfaceClass =
+    "border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]";
+>>>>>>> Stashed changes
 
   return (
     <div className="flex flex-col gap-3">
@@ -115,7 +120,7 @@ export function SkillsToolbar({
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search skills by name, slug, or summary..."
-          className="pl-10 pr-10"
+          className={`pl-10 pr-10 dark:text-[rgba(245,238,232,0.96)] ${controlSurfaceClass}`}
         />
         {query && (
           <button
@@ -149,8 +154,13 @@ export function SkillsToolbar({
         ) : null}
         <Select value={activeCategory ?? "__all__"} onValueChange={(v) => handleCategoryChange(v === "__all__" ? undefined : SKILL_CATEGORIES.find((c) => c.slug === v))}>
           <SelectTrigger
+<<<<<<< Updated upstream
             className="w-auto min-w-[156px] min-h-[36px] py-1.5 text-xs font-semibold"
             aria-label="Filter by category"
+=======
+            className={`w-auto min-w-[156px] min-h-[36px] py-1.5 text-xs font-semibold ${controlSurfaceClass} dark:text-[rgba(245,238,232,0.96)]`}
+            aria-label="Filter by tag"
+>>>>>>> Stashed changes
           >
             <SelectValue placeholder="All categories" />
           </SelectTrigger>
@@ -173,7 +183,7 @@ export function SkillsToolbar({
         {/* Sort */}
         <Select value={sort} onValueChange={onSortChange}>
           <SelectTrigger
-            className="w-auto min-w-[140px] min-h-[36px] py-1.5 text-xs font-semibold"
+            className={`w-auto min-w-[140px] min-h-[36px] py-1.5 text-xs font-semibold ${controlSurfaceClass} dark:text-[rgba(245,238,232,0.96)]`}
             aria-label="Sort skills"
           >
             <SelectValue />
@@ -202,7 +212,13 @@ export function SkillsToolbar({
         </Button>
 
         {/* View toggle */}
+<<<<<<< Updated upstream
         <div className="inline-flex items-center rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] p-0.5">
+=======
+        <div
+          className={`inline-flex items-center rounded-[var(--radius-pill)] border p-0.5 ${controlSurfaceClass}`}
+        >
+>>>>>>> Stashed changes
           <button
             type="button"
             onClick={view === "list" ? onToggleView : undefined}
@@ -252,7 +268,11 @@ function FilterChip({
       className={`inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 min-h-[36px] text-xs font-semibold transition-all duration-150 ${
         active
           ? "border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 text-[color:var(--accent)]"
+<<<<<<< Updated upstream
           : "text-[color:var(--ink-soft)] hover:border-[color:var(--border-ui-hover)] hover:text-[color:var(--ink)]"
+=======
+          : "border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] text-[color:var(--ink-soft)] hover:border-[color:var(--border-ui-hover)] hover:text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)] dark:text-[rgba(245,238,232,0.88)] dark:hover:text-[rgba(245,238,232,0.96)]"
+>>>>>>> Stashed changes
       }`}
     >
       {active && !icon && <Check className="h-3 w-3" />}
