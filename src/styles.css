@@ -640,7 +640,7 @@ code {
 }
 
 .site-footer {
-  padding: var(--space-6) var(--space-5);
+  padding: var(--space-3) var(--space-5);
   margin-top: auto;
   background: var(--surface);
   border-top: 1px solid var(--line);
@@ -4267,7 +4267,7 @@ code {
   }
 
   .site-footer {
-    padding: 0 18px 36px;
+    padding: 0 18px 18px;
   }
 }
 
@@ -7111,15 +7111,18 @@ html.theme-transition::view-transition-new(theme) {
 
 .footer-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-5);
-  padding: var(--space-6) 0 var(--space-5);
+  grid-template-columns: repeat(4, auto);
+  gap: var(--space-3) var(--space-7);
+  padding: var(--space-3) 0 var(--space-2);
+  justify-content: center;
+  text-align: center;
 }
 
 .footer-col {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .footer-col-title {
@@ -7128,7 +7131,7 @@ html.theme-transition::view-transition-new(theme) {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink-soft);
-  margin-bottom: var(--space-1);
+  margin-bottom: 2px;
 }
 
 .footer-col a,
@@ -7143,7 +7146,7 @@ html.theme-transition::view-transition-new(theme) {
 
 .footer-bottom {
   border-top: 1px solid var(--line);
-  padding: var(--space-4) 0;
+  padding: var(--space-2) 0;
   text-align: center;
   font-size: var(--fs-sm);
   letter-spacing: 0.015em;
@@ -7164,15 +7167,15 @@ html.theme-transition::view-transition-new(theme) {
 
 @media (max-width: 760px) {
   .footer-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
+    grid-template-columns: repeat(2, auto);
+    gap: var(--space-3) var(--space-5);
   }
 }
 
 @media (max-width: 520px) {
   .footer-grid {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: var(--space-3);
   }
 }
 
