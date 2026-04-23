@@ -6,10 +6,8 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { HighlighterGeneric } from "shiki";
 import type { PluggableList } from "unified";
+import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { cn } from "../lib/utils";
-import { ProxiedImg } from "./ProxiedImg";
-
-const MARKDOWN_COMPONENTS = { img: ProxiedImg };
 
 interface MarkdownPreviewProps {
   children: string;
@@ -32,7 +30,13 @@ const schema = {
 
 // Order matters: rehype-sanitize runs BEFORE rehype-shiki so sanitize only
 // sees user-authored HTML; shiki's trusted styled output flows through after.
-const baseRehype: PluggableList = [rehypeRaw, [rehypeSanitize, schema]];
+// rehypeProxyImages rewrites after sanitize so we rewrite only already-safe
+// <img src="..."> nodes (sanitize strips event handlers, javascript: URLs).
+const baseRehype: PluggableList = [
+  rehypeRaw,
+  [rehypeSanitize, schema],
+  rehypeProxyImages,
+];
 
 const SHIKI_THEME = "github-dark";
 const SHIKI_LANGS = [
@@ -105,11 +109,7 @@ export function MarkdownPreview({ children, className, highlight = true }: Markd
 
   return (
     <div className={cn("markdown", className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={rehypePlugins}
-        components={MARKDOWN_COMPONENTS}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={rehypePlugins}>
         {children}
       </ReactMarkdown>
     </div>
