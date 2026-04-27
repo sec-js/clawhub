@@ -423,6 +423,24 @@ function shouldSyncModerationFromLatestVersion(
   );
 }
 
+function shouldBackfillLatestSkillModeration(
+  skill: Pick<
+    Doc<"skills">,
+    | "latestVersionId"
+    | "manualOverride"
+    | "moderationStatus"
+    | "moderationReason"
+    | "moderationSourceVersionId"
+    | "softDeletedAt"
+  >,
+) {
+  if (skill.manualOverride) return false;
+  if (!shouldSyncModerationFromLatestVersion(skill)) return false;
+  if (!skill.latestVersionId) return false;
+  if (skill.moderationSourceVersionId === skill.latestVersionId) return false;
+  return isScannerManagedReason(skill.moderationReason as string | undefined);
+}
+
 async function syncSkillModerationFromLatestVersion(
   ctx: MutationCtx,
   skill: Doc<"skills">,
@@ -4636,6 +4654,10 @@ export const approveSkillByHashInternal = internalMutation({
     // Update the skill's moderation status based on scan result
     const skill = await ctx.db.get(version.skillId);
     if (skill) {
+      if (skill.latestVersionId && skill.latestVersionId !== version._id) {
+        return { ok: true, skillId: version.skillId, versionId: version._id };
+      }
+
       const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
       const isMalicious = args.status === "malicious";
       const isSuspicious = args.status === "suspicious";
@@ -4760,6 +4782,7 @@ export const escalateByVtInternal = internalMutation({
 
     const skill = await ctx.db.get(version.skillId);
     if (!skill) return;
+    if (skill.latestVersionId && skill.latestVersionId !== version._id) return;
 
     const isMalicious = args.status === "malicious";
     const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? [];
@@ -4837,6 +4860,39 @@ export const escalateByVtInternal = internalMutation({
         slug: skill.slug,
       });
     }
+  },
+});
+
+/**
+ * Re-sync skill-level moderation from each skill's current latest version.
+ * This repairs rows that were previously stamped from an older version scan.
+ */
+export const backfillLatestSkillModerationInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skills")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const skill of page) {
+      if (!shouldBackfillLatestSkillModeration(skill)) continue;
+      await syncSkillModerationFromLatestVersion(ctx, skill, Date.now());
+      patched++;
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.skills.backfillLatestSkillModerationInternal, {
+        cursor: continueCursor,
+        batchSize: args.batchSize,
+      });
+    }
+
+    return { patched, isDone, scanned: page.length };
   },
 });
 
