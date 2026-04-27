@@ -663,6 +663,50 @@ describe("search helpers", () => {
     expect(result).toHaveLength(0);
   });
 
+  it("finds recently created skills missed by the updatedAt fallback scan (#1185)", async () => {
+    const newSkill = makeSkillDoc({
+      id: "skills:new",
+      slug: "ai-clipping",
+      displayName: "AI Clipping",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [],
+      recentByCreated: [newSkill],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "clipping",
+      queryTokens: ["clipping"],
+      limit: 10,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("ai-clipping");
+  });
+
+  it("deduplicates skills found by both fallback scan windows", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:dup",
+      slug: "orf-dup",
+      displayName: "ORF Dup",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [skill],
+      recentByCreated: [skill],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "orf",
+      queryTokens: ["orf"],
+      limit: 10,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("orf-dup");
+  });
+
   it("advances candidate limit until max", () => {
     expect(__test.getNextCandidateLimit(50, 1000)).toBe(100);
     expect(__test.getNextCandidateLimit(800, 1000)).toBe(1000);
@@ -1064,16 +1108,20 @@ function makeSkillDoc(params: {
 function makeLexicalCtx(params: {
   exactSlugSkill: ReturnType<typeof makeSkillDoc> | null;
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>;
+  recentByCreated?: Array<ReturnType<typeof makeSkillDoc>>;
 }) {
   // Convert skill docs to digest-shaped rows (add skillId + owner fields).
-  const digestRows = params.recentSkills.map((skill) => ({
-    ...skill,
-    skillId: skill._id,
-    ownerHandle: "owner",
-    ownerName: "Owner",
-    ownerDisplayName: "Owner",
-    ownerImage: undefined,
-  }));
+  const toDigestRows = (skills: Array<ReturnType<typeof makeSkillDoc>>) =>
+    skills.map((skill) => ({
+      ...skill,
+      skillId: skill._id,
+      ownerHandle: "owner",
+      ownerName: "Owner",
+      ownerDisplayName: "Owner",
+      ownerImage: undefined,
+    }));
+  const digestByUpdated = toDigestRows(params.recentSkills);
+  const digestByCreated = toDigestRows(params.recentByCreated ?? []);
   return {
     db: {
       query: vi.fn((table: string) => {
@@ -1095,7 +1143,14 @@ function makeLexicalCtx(params: {
               if (index === "by_active_updated") {
                 return {
                   order: () => ({
-                    take: vi.fn().mockResolvedValue(digestRows),
+                    take: vi.fn().mockResolvedValue(digestByUpdated),
+                  }),
+                };
+              }
+              if (index === "by_active_created") {
+                return {
+                  order: () => ({
+                    take: vi.fn().mockResolvedValue(digestByCreated),
                   }),
                 };
               }

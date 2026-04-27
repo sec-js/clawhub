@@ -16,6 +16,7 @@
 - Search: increase initial vector candidate pools and align CLI search's default limit with the web UI so high-scoring matches are not missed at small limits (#1375, #1429) (thanks @tjefferson).
 - Search: fall back to lexical skill search when embedding generation fails instead of returning empty skill results (#1291) (thanks @goulonghui).
 - Search: rank exact slug matches above longer slugs that merely contain all query tokens (#1130) (thanks @QuinnH496).
+- Search: widen lexical fallback coverage and scan recently created skills so newly published skills can be found before embeddings rank well (#1185, #1200) (thanks @thirumaleshp).
 - Search: preserve vector scores across candidate expansion and require all query tokens to match exact-token filters so relevant skills are not crowded out (#1759, #1762) (thanks @LinPower).
 - Stats maintenance: keep skill stat migration fields synchronized by treating top-level stat fields as canonical during backfill/reconcile fallback reads (#1704) (thanks @momothemage).
 - Skill install: render OpenClaw CLI commands with the bare slug that the current CLI accepts (#1807).
