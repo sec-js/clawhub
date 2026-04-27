@@ -4,12 +4,14 @@
 
 ### Changed
 
+- Packages docs: document the required fields for code-plugin package publish flows (#1802) (thanks @deepujain).
 - Search: add CJK tokenization support (Chinese/Japanese/Korean) with Intl.Segmenter plus fallback behavior to improve skill query matching (#1596) (thanks @pq-dong).
 - Stats: centralize migrated skill stat fallback reads through `readCanonicalStat()` and add schema/agent guardrails to discourage direct legacy nested-field access (#1709) (thanks @momothemage).
 
 ### Fixes
 
 - Packages: keep package search fallback scans bounded, stop scanning after the requested result limit, and keep direct plugin-name matches scoped to the requested package family (OpenClaw #64025).
+- Moderation: stop flagging declared env vars sent to their intended API while preserving broad env scraping and exfiltration findings (#1803) (thanks @deepujain).
 - Stats maintenance: keep skill stat migration fields synchronized by treating top-level stat fields as canonical during backfill/reconcile fallback reads (#1704) (thanks @momothemage).
 - Skills: prevent backport publishes from clobbering `latest` state and guard malformed persisted latest semver values during publish comparisons (#1832) (thanks @momothemage).
 
