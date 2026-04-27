@@ -36,10 +36,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Update Convex AI files
-        run: bunx --bun convex ai-files update
+        run: |
+          "$(bun pm bin)/convex" ai-files update
 
       - name: Check Convex AI files status
-        run: bunx --bun convex ai-files status
+        run: |
+          "$(bun pm bin)/convex" ai-files status
 
       - name: Detect changes
         id: changes
