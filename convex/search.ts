@@ -7,9 +7,9 @@ import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
 import { toPublicPublisher, toPublicSkill, toPublicSoul } from "./lib/public";
-import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { getOwnerPublisher } from "./lib/publishers";
 import { matchesExactTokens, tokenize } from "./lib/searchText";
+import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { isSkillSuspicious } from "./lib/skillSafety";
 import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
 
@@ -193,9 +193,9 @@ export const searchSkills: ReturnType<typeof action> = action({
         hydrated = [...hydrated, ...newEntries];
       }
 
-      scoreById = new Map<Id<"skillEmbeddings">, number>(
-        results.map((result) => [result._id, result._score]),
-      );
+      for (const result of results) {
+        scoreById.set(result._id, result._score);
+      }
 
       // Skills already have badges from their docs (via toPublicSkill).
       // No need for a separate badge table lookup.
@@ -476,9 +476,9 @@ export const searchSouls: ReturnType<typeof action> = action({
         embeddingIds: results.map((result) => result._id),
       })) as HydratedSoulEntry[];
 
-      scoreById = new Map<Id<"soulEmbeddings">, number>(
-        results.map((result) => [result._id, result._score]),
-      );
+      for (const result of results) {
+        scoreById.set(result._id, result._score);
+      }
 
       exactMatches = hydrated.filter((entry) =>
         matchesExactTokens(queryTokens, [

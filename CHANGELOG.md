@@ -13,6 +13,7 @@
 - Packages: keep package search fallback scans bounded, stop scanning after the requested result limit, and keep direct plugin-name matches scoped to the requested package family (OpenClaw #64025).
 - Moderation: stop flagging declared env vars sent to their intended API while preserving broad env scraping and exfiltration findings (#1803) (thanks @deepujain).
 - Moderation: stop treating generic webhook integration docs as suspicious unless they include explicit Discord or Slack webhook endpoints (#1716) (thanks @langningchen-openclaw).
+- Search: preserve vector scores across candidate expansion and require all query tokens to match exact-token filters so relevant skills are not crowded out (#1759, #1762) (thanks @LinPower).
 - Stats maintenance: keep skill stat migration fields synchronized by treating top-level stat fields as canonical during backfill/reconcile fallback reads (#1704) (thanks @momothemage).
 - Skills: keep historical tags out of public skill detail surfaces while preserving manager visibility (#1804) (thanks @deepujain).
 - Skills moderation: keep hash-based scanner callbacks from overwriting skill-level moderation for older versions (#1805) (thanks @deepujain).

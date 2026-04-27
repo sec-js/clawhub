@@ -213,7 +213,7 @@ describe("search helpers", () => {
       skill: makePublicSkill({
         id: `skills:${index}`,
         slug: `downloader-${index}`,
-        displayName: `Downloader ${index}`,
+        displayName: `Skill Downloader ${index}`,
         downloads: 100 - index,
       }),
       version: null,
@@ -240,14 +240,12 @@ describe("search helpers", () => {
 
     const result = await searchSkillsHandler(
       {
-        vectorSearch: vi
-          .fn()
-          .mockResolvedValue(
-            vectorEntries.map((entry, index) => ({
-              _id: entry.embeddingId,
-              _score: 0.9 - index * 0.01,
-            })),
-          ),
+        vectorSearch: vi.fn().mockResolvedValue(
+          vectorEntries.map((entry, index) => ({
+            _id: entry.embeddingId,
+            _score: 0.9 - index * 0.01,
+          })),
+        ),
         runQuery,
       },
       { query: "skill-downloader", limit: 10 },
@@ -267,7 +265,7 @@ describe("search helpers", () => {
         skill: makePublicSkill({
           id: "skills:1",
           slug: "downloader-1",
-          displayName: "Downloader 1",
+          displayName: "Skill Downloader 1",
           downloads: 50,
         }),
         version: null,
@@ -316,7 +314,7 @@ describe("search helpers", () => {
           ...makePublicSkill({
             id: "skills:1",
             slug: "downloader-1",
-            displayName: "Downloader 1",
+            displayName: "Skill Downloader 1",
             downloads: 50,
           }),
           badges: { highlighted: { byUserId: "users:mod", at: 1 } },
@@ -422,7 +420,7 @@ describe("search helpers", () => {
         skill: makePublicSkill({
           id: "skills:other",
           slug: "downloader-2",
-          displayName: "Downloader 2",
+          displayName: "Skill Downloader 2",
           downloads: 50,
         }),
         version: null,
@@ -865,6 +863,96 @@ describe("search helpers", () => {
     const merged = __test.mergeUniqueBySkillId(primary, fallback);
     expect(merged).toHaveLength(2);
     expect(merged.map((entry) => entry.skill._id)).toEqual(["skills:1", "skills:2"]);
+  });
+
+  it("preserves vector scores across candidate expansion iterations", async () => {
+    // Regression test for scoreById overwrite bug.
+    //
+    // Setup:
+    //   limit=10  →  candidateLimit starts at 50, maxCandidate=200
+    //   Iteration 1: vectorSearch returns exactly 50 results (= candidateLimit)
+    //                → results.length < candidateLimit is false → loop continues
+    //   Iteration 2: vectorSearch returns 2 results (< 100) → loop exits
+    //
+    // skillA appears ONLY in iteration 1 (score 0.95).
+    // skillB appears ONLY in iteration 2 (score 0.5).
+    //
+    // With the BUG:  scoreById = new Map(iter2_results) → skillA missing → vectorScore=0
+    // With the FIX:  scoreById.set() merges → skillA retains 0.95
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const skillA = makePublicSkill({
+      id: "skills:a",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+      downloads: 100,
+    });
+    const skillB = makePublicSkill({
+      id: "skills:b",
+      slug: "baidu-yijian-test",
+      displayName: "Baidu Yijian Test",
+      downloads: 50,
+    });
+
+    // Iteration 1: exactly 50 entries so the loop does NOT exit early.
+    // skillA is entry 0; entries 1-49 are fillers filtered out by hydrateResults.
+    const iter1Results = Array.from({ length: 50 }, (_, i) => ({
+      _id: i === 0 ? "skillEmbeddings:a" : `skillEmbeddings:filler${i}`,
+      _score: i === 0 ? 0.95 : 0.1,
+    }));
+
+    // Iteration 2: 2 entries, both new IDs (skillA is absent from this batch).
+    // results.length (2) < candidateLimit (100) → loop exits.
+    const iter2Results = [
+      { _id: "skillEmbeddings:b", _score: 0.5 },
+      { _id: "skillEmbeddings:filler50", _score: 0.08 },
+    ];
+
+    const runQuery = vi
+      .fn()
+      // hydrateResults iteration 1: 50 new IDs → only skillA survives hydration
+      .mockResolvedValueOnce([
+        {
+          embeddingId: "skillEmbeddings:a",
+          skill: skillA,
+          version: null,
+          ownerHandle: "owner",
+          owner: null,
+        },
+      ])
+      // hydrateResults iteration 2: 2 new IDs → only skillB survives hydration
+      .mockResolvedValueOnce([
+        {
+          embeddingId: "skillEmbeddings:b",
+          skill: skillB,
+          version: null,
+          ownerHandle: "owner",
+          owner: null,
+        },
+      ])
+      // lexicalFallbackSkills (exactMatches < limit after loop exits)
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi
+          .fn()
+          .mockResolvedValueOnce(iter1Results) // iteration 1: 50 results, loop continues
+          .mockResolvedValueOnce(iter2Results), // iteration 2: 2 results, loop exits
+        runQuery,
+      },
+      { query: "baidu yijian", limit: 10 },
+    );
+
+    const resultA = result.find(
+      (r: { skill: { slug: string } }) => r.skill.slug === "baidu-yijian-vision",
+    );
+    expect(resultA).toBeDefined();
+    // With scoreById correctly merged: skillA retains vectorScore=0.95.
+    // With the bug (overwrite): skillA.embeddingId absent from iter2 map → vectorScore=0.
+    // Lexical boost for "baidu-yijian-vision" slug matching "baidu yijian" ≈ 0.8 (prefix).
+    // Fix: score ≈ 0.95 + 0.8 + popularity > 1.5; Bug: score ≈ 0 + 0.8 + popularity < 0.9.
+    expect(resultA!.score).toBeGreaterThan(1.0);
   });
 });
 
