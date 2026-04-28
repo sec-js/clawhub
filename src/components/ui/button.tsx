@@ -79,7 +79,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {loading && (
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/25 border-t-current" />
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/25 border-t-current [animation-duration:2.4s]" />
         )}
         <Slottable>{children}</Slottable>
       </Comp>

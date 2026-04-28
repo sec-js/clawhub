@@ -101,6 +101,12 @@ export function DetailSecuritySummary({
   const llmStatus = llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending";
   const staticStatus = statusFromStaticScan(staticScan);
   const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
+  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
+  const rescanButtonLabel = isScanInProgress
+    ? "Scan in progress"
+    : isRequestingRescan
+      ? "Requesting..."
+      : "Rescan";
 
   async function handleRequestRescan() {
     if (!onRequestRescan || rescanButtonDisabledReason || isRequestingRescan) return;
@@ -123,12 +129,12 @@ export function DetailSecuritySummary({
               variant="outline"
               size="sm"
               className="ml-auto"
-              loading={isRequestingRescan}
+              loading={isRequestingRescan || isScanInProgress}
               disabled={Boolean(rescanButtonDisabledReason)}
               title={rescanButtonDisabledReason ?? "Request a fresh scan"}
               onClick={() => void handleRequestRescan()}
             >
-              Rescan
+              {rescanButtonLabel}
             </Button>
           ) : null}
         </CardTitle>

@@ -289,4 +289,5 @@ describe("Dashboard minimal rows", () => {
     expect(screen.queryByText("2/3 rescans left")).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
   });
+
 });

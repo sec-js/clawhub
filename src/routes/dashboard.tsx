@@ -464,7 +464,14 @@ function RowMenu({
   const requestSkillRescan = useMutation(api.skills.requestRescan);
   const requestPluginRescan = useMutation(api.packages.requestRescan);
   const [isRequesting, setIsRequesting] = useState(false);
+  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
   const showRescan = canShowDashboardRescan(statusLabel, rescanState);
+  const showRescanItem = showRescan || isScanInProgress;
+  const rescanLabel = isScanInProgress
+    ? "Scan in progress"
+    : isRequesting
+      ? "Requesting..."
+      : "Request rescan";
 
   async function requestRescan() {
     if (!showRescan || isRequesting) return;
@@ -503,10 +510,20 @@ function RowMenu({
               Settings
             </a>
           </DropdownMenuItem>
-          {showRescan ? (
-            <DropdownMenuItem disabled={isRequesting} onSelect={() => void requestRescan()}>
-              <RotateCw className="h-4 w-4" aria-hidden="true" />
-              {isRequesting ? "Requesting..." : "Request rescan"}
+          {showRescanItem ? (
+            <DropdownMenuItem
+              disabled={isRequesting || isScanInProgress}
+              onSelect={() => void requestRescan()}
+            >
+              <RotateCw
+                className={
+                  isRequesting || isScanInProgress
+                    ? "h-4 w-4 animate-spin [animation-duration:2.4s]"
+                    : "h-4 w-4"
+                }
+                aria-hidden="true"
+              />
+              {rescanLabel}
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
