@@ -71,7 +71,7 @@ describe("SkillDetailPage", () => {
     });
 
     render(<SkillDetailPage slug="weather" />);
-    expect(screen.getByText(/Loading skill/i)).toBeTruthy();
+    expect(screen.getByRole("status", { name: /Loading skill details/i })).toBeTruthy();
     expect(screen.queryByText(/Skill not found/i)).toBeNull();
   });
 
@@ -222,18 +222,105 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    const installHeading = await screen.findByRole("heading", { name: "Install with OpenClaw" });
-    const scanDisclaimer = screen.getByText(
-      /Like a lobster shell, security has layers — review code before you run it\./i,
+    await screen.findByRole("heading", { name: "Install" });
+    const securityHeading = screen.getByRole("heading", { name: "Security Scans" });
+
+    expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
+    expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
+    expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
+    expect(securityHeading).toBeTruthy();
+    expect(screen.getByRole("link", { name: /VirusTotal.*Pending/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /ClawScan.*Pending/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Static analysis.*Pending/i })).toBeTruthy();
+    expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+  });
+
+  it("shows an owner rescan action in the security summary for owned skills", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: ownerId, role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args && !("limit" in args)) {
+        return {
+          maxRequests: 3,
+          requestCount: 1,
+          remainingRequests: 2,
+          canRequest: true,
+          inProgressRequest: null,
+          latestRequest: null,
+        };
+      }
+      if (args && typeof args === "object" && "limit" in args) return [];
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [],
+              sha256hash: "abc123",
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather",
+          readmeError: null,
+        }}
+      />,
     );
 
-    expect(screen.getByRole("heading", { name: "CLI Commands" })).toBeTruthy();
-    expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
-    expect(screen.getByText("npx clawhub@latest install weather")).toBeTruthy();
-    expect(screen.getByText(/After install, inspect the skill metadata/i)).toBeTruthy();
-    expect(
-      installHeading.compareDocumentPosition(scanDisclaimer) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Rescan" })).toBeTruthy();
+    expect(screen.queryByText("Owner rescan")).toBeNull();
+    expect(screen.queryByText("2/3 rescans left")).toBeNull();
   });
 
   it("does not refetch readme when SSR data already matches the latest version", async () => {
@@ -349,7 +436,7 @@ describe("SkillDetailPage", () => {
     });
 
     render(<SkillDetailPage slug="weather" redirectToCanonical />);
-    expect(screen.getByText(/Loading skill/i)).toBeTruthy();
+    expect(screen.getByRole("status", { name: /Loading skill details/i })).toBeTruthy();
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalled();
@@ -506,7 +593,7 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Report skill/i)).toBeTruthy();
   });
 
-  it("shows owner tools for the skill owner", async () => {
+  it("links owner tools from the detail page and renders them on settings", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -514,7 +601,11 @@ describe("SkillDetailPage", () => {
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args && typeof args === "object" && "ownerUserId" in args) {
+      if (
+        args &&
+        typeof args === "object" &&
+        ("ownerUserId" in args || "ownerPublisherId" in args)
+      ) {
         return [
           { _id: "skills:1", slug: "weather", displayName: "Weather" },
           { _id: "skills:2", slug: "weather-pro", displayName: "Weather Pro" },
@@ -547,7 +638,14 @@ describe("SkillDetailPage", () => {
       return undefined;
     });
 
-    render(<SkillDetailPage slug="weather" />);
+    const { unmount } = render(<SkillDetailPage slug="weather" />);
+
+    const settingsLink = await screen.findByRole("link", { name: /settings/i });
+    expect(settingsLink.getAttribute("href")).toBe("/steipete/weather/settings");
+    expect(screen.queryByText(/Owner tools/i)).toBeNull();
+    unmount();
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
 
     expect(await screen.findByText(/Owner tools/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Rename and redirect/i })).toBeTruthy();

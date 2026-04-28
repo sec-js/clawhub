@@ -1,14 +1,16 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Link } from "@tanstack/react-router";
-import { Package } from "lucide-react";
+import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
+import { Calendar, Download, History, Package, Scale, Settings, Star } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-
-import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
+import { timeAgo } from "../lib/timeAgo";
+import { DetailHero } from "./DetailPageShell";
 import { SkillInstallCard } from "./SkillInstallCard";
-import { SkillInstallSurface } from "./SkillInstallSurface";
+import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
@@ -63,18 +65,11 @@ type SkillHeaderProps = {
   hasPluginBundle: boolean;
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
-  tagEntries: Array<[string, Id<"skillVersions">]>;
-  historicalTagEntries: Array<[string, Id<"skillVersions">]>;
-  versionById: Map<Id<"skillVersions">, Doc<"skillVersions">>;
-  tagName: string;
-  onTagNameChange: (value: string) => void;
-  tagVersionId: Id<"skillVersions"> | "";
-  onTagVersionChange: (value: Id<"skillVersions"> | "") => void;
-  onTagSubmit: () => void;
-  onTagDelete: (tag: string) => void;
-  tagVersions: Doc<"skillVersions">[];
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
+  sidebarContent?: ReactNode;
+  settingsHref?: string | null;
+  children?: ReactNode;
 };
 
 export function SkillHeader({
@@ -104,28 +99,13 @@ export function SkillHeader({
   hasPluginBundle,
   configRequirements,
   cliHelp,
-  tagEntries,
-  historicalTagEntries,
-  versionById,
-  tagName,
-  onTagNameChange,
-  tagVersionId,
-  onTagVersionChange,
-  onTagSubmit,
-  onTagDelete,
-  tagVersions,
   clawdis,
   osLabels,
+  sidebarContent,
+  settingsHref,
+  children,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
-  const suppressScanResults =
-    !isStaff &&
-    Boolean(modInfo?.overrideActive) &&
-    !modInfo?.isMalwareBlocked &&
-    !modInfo?.isSuspicious;
-  const overrideScanMessage = suppressScanResults
-    ? "Security findings were reviewed by staff and cleared for public use."
-    : null;
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
 
   return (
@@ -138,16 +118,6 @@ export function SkillHeader({
               Your skill is being scanned by VirusTotal. It will be visible to others once the scan
               completes. This usually takes up to 5 minutes — grab a coffee or exfoliate your shell
               while you wait.
-            </p>
-          </div>
-        </div>
-      ) : modInfo?.isMalwareBlocked ? (
-        <div className="pending-banner pending-banner-blocked">
-          <div className="pending-banner-content">
-            <strong>Skill blocked — malicious content detected</strong>
-            <p>
-              ClawHub Security flagged this skill as malicious. Downloads are disabled. Review the
-              scan results below.
             </p>
           </div>
         </div>
@@ -190,145 +160,161 @@ export function SkillHeader({
         </div>
       ) : null}
 
-      <div className="card skill-hero">
-        <div className={`skill-hero-top${hasPluginBundle ? " has-plugin" : ""}`}>
-          <div className="skill-hero-header">
-            <div className="skill-hero-title">
-              <div className="skill-hero-title-row">
-                <h1 className="section-title m-0">
-                  {skill.displayName}
-                </h1>
-                {latestVersion?.version ? (
-                  <span className="plugin-version-badge">v{latestVersion.version}</span>
-                ) : null}
-                {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-              </div>
-              <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
-
-              {isStaff && staffModerationNote ? (
-                <div className="skill-hero-note">{staffModerationNote}</div>
-              ) : null}
-              {nixPlugin ? (
-                <div className="skill-hero-note">
-                  Bundles the skill pack, CLI binary, and config requirements in one Nix install.
-                </div>
-              ) : null}
-
-              <div className="skill-hero-inline-meta">
-                <div className="skill-hero-stats-row">
-                  <span className="stat">⭐ {formattedStats.stars}</span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat"><Package size={14} aria-hidden="true" /> {formattedStats.downloads}</span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">{formatCompactStat(skill.stats.installsCurrent ?? 0)} current</span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">{formattedStats.installsAllTime} all-time</span>
-                </div>
-                <div className="skill-hero-meta-row">
-                  <UserBadge
-                    user={owner}
-                    fallbackHandle={ownerHandle}
-                    prefix="by"
-                    size="md"
-                    showName
-                  />
-                  {forkOf && forkOfHref ? (
-                    <>
-                      <span className="text-ink-soft opacity-40">·</span>
-                      <span className="stat">
-                        {forkOfLabel}{" "}
-                        <a href={forkOfHref}>
-                          {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
-                          {forkOf.skill.slug}
-                        </a>
-                        {forkOf.version ? ` (${forkOf.version})` : null}
-                      </span>
-                    </>
+      <DetailHero
+        topClassName={hasPluginBundle ? "has-plugin" : undefined}
+        main={
+          <>
+              <div className="skill-hero-title">
+                <div className="skill-hero-title-row">
+                  <h1 className="skill-page-title">{skill.displayName}</h1>
+                  {latestVersion?.version ? (
+                    <span className="plugin-version-badge">v{latestVersion.version}</span>
                   ) : null}
-                  {canonicalHref ? (
-                    <>
-                      <span className="text-ink-soft opacity-40">·</span>
-                      <span className="stat">
-                        canonical:{" "}
-                        <a href={canonicalHref}>
-                          {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
-                          {canonical?.skill?.slug}
-                        </a>
-                      </span>
-                    </>
+                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                  {isStaff || settingsHref ? (
+                    <div className="skill-title-actions">
+                      {isStaff ? (
+                        <Button asChild variant="outline" size="sm">
+                          <Link to="/management" search={{ skill: skill.slug }}>
+                            Manage
+                          </Link>
+                        </Button>
+                      ) : null}
+                      {settingsHref ? (
+                        <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                          <a href={settingsHref}>
+                            <Settings size={14} aria-hidden="true" />
+                            Settings
+                          </a>
+                        </Button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
-              </div>
+                <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
 
-              <div className="skill-hero-badges">
-                {getSkillBadges(skill).map((badge) => (
-                  <Badge key={badge} variant="compact">
-                    {badge}
-                  </Badge>
-                ))}
-                {isStaff && staffVisibilityTag ? (
-                  <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
-                    {staffVisibilityTag}
-                  </Badge>
+                {isStaff && staffModerationNote ? (
+                  <div className="skill-hero-note">{staffModerationNote}</div>
                 ) : null}
+                {nixPlugin ? (
+                  <div className="skill-hero-note">
+                    Bundles the skill pack, CLI binary, and config requirements in one Nix install.
+                  </div>
+                ) : null}
+
+                <div className="skill-hero-inline-meta">
+                  <div className="skill-hero-stats-row">
+                    <span className="stat">
+                      <Star size={14} aria-hidden="true" /> {formattedStats.stars}
+                    </span>
+                    <span className="text-ink-soft opacity-40">·</span>
+                    <span className="stat">
+                      <Download size={14} aria-hidden="true" /> {formattedStats.downloads}
+                    </span>
+                    <span className="text-ink-soft opacity-40">·</span>
+                    <span className="stat">
+                      <Package size={14} aria-hidden="true" /> {skill.stats.versions ?? 0} versions
+                    </span>
+                    <span className="text-ink-soft opacity-40">·</span>
+                    <span className="stat">
+                      <History size={14} aria-hidden="true" />{" "}
+                      {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
+                    </span>
+                    <span className="text-ink-soft opacity-40">·</span>
+                    <span className="stat">
+                      <History size={14} aria-hidden="true" /> {formattedStats.installsAllTime}{" "}
+                      all-time
+                    </span>
+                    <span className="text-ink-soft opacity-40">·</span>
+                    <span className="stat">
+                      <Calendar size={14} aria-hidden="true" /> Updated {timeAgo(skill.updatedAt)}
+                    </span>
+                    <span className="text-ink-soft opacity-40">·</span>
+                    <span className="stat">
+                      <Scale size={14} aria-hidden="true" /> {PLATFORM_SKILL_LICENSE}
+                    </span>
+                  </div>
+                  <div className="skill-hero-meta-row">
+                    <UserBadge
+                      user={owner}
+                      fallbackHandle={ownerHandle}
+                      prefix="by"
+                      size="md"
+                      showName
+                    />
+                    {forkOf && forkOfHref ? (
+                      <>
+                        <span className="text-ink-soft opacity-40">·</span>
+                        <span className="stat">
+                          {forkOfLabel}{" "}
+                          <a href={forkOfHref}>
+                            {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
+                            {forkOf.skill.slug}
+                          </a>
+                          {forkOf.version ? ` (${forkOf.version})` : null}
+                        </span>
+                      </>
+                    ) : null}
+                    {canonicalHref ? (
+                      <>
+                        <span className="text-ink-soft opacity-40">·</span>
+                        <span className="stat">
+                          canonical:{" "}
+                          <a href={canonicalHref}>
+                            {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
+                            {canonical?.skill?.slug}
+                          </a>
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="skill-hero-badges">
+                  {getSkillBadges(skill).map((badge) => (
+                    <Badge key={badge} variant="compact">
+                      {badge}
+                    </Badge>
+                  ))}
+                  {isStaff && staffVisibilityTag ? (
+                    <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
+                      {staffVisibilityTag}
+                    </Badge>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            <div className="skill-hero-sidebar">
-              <div className="skill-actions">
-                {isAuthenticated ? (
+          </>
+        }
+        sidebar={
+          <>
+              {isAuthenticated ? (
+                <div className="skill-actions">
                   <button
                     className={`star-toggle${isStarred ? " is-active" : ""}`}
                     type="button"
                     onClick={onToggleStar}
                     aria-label={isStarred ? "Unstar skill" : "Star skill"}
                   >
-                    <span aria-hidden="true">★</span>
+                    <Star size={16} aria-hidden="true" />
                   </button>
-                ) : null}
-                {isAuthenticated ? (
                   <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
                     Report
                   </Button>
-                ) : null}
-                {isStaff ? (
-                  <Button asChild size="sm">
-                    <Link to="/management" search={{ skill: skill.slug }}>
-                      Manage
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <SkillInstallSurface
-            slug={skill.slug}
-            displayName={skill.displayName}
-            ownerHandle={ownerHandle}
-            ownerId={installOwnerId}
-            clawdis={clawdis}
-          />
-
-          {/* Security scan — full width below the header columns */}
-          {suppressScanResults ? (
-            <div className="skill-hero-note">{overrideScanMessage}</div>
-          ) : latestVersion?.sha256hash ||
-            latestVersion?.llmAnalysis ||
-            (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ||
-            (latestVersion?.capabilityTags?.length ?? 0) > 0 ? (
-            <div className="skill-hero-scan-row">
-              <SecurityScanResults
-                sha256hash={latestVersion?.sha256hash}
-                vtAnalysis={latestVersion?.vtAnalysis}
-                llmAnalysis={latestVersion?.llmAnalysis as LlmAnalysis | undefined}
-                staticFindings={latestVersion?.staticScan?.findings}
-                capabilityTags={latestVersion?.capabilityTags}
+                </div>
+              ) : null}
+              {sidebarContent}
+              <SkillCommandLineCard
+                slug={skill.slug}
+                displayName={skill.displayName}
+                ownerHandle={ownerHandle}
+                ownerId={installOwnerId}
+                clawdis={clawdis}
               />
-              <p className="scan-disclaimer">
-                Like a lobster shell, security has layers — review code before you run it.
-              </p>
-            </div>
-          ) : null}
+          </>
+        }
+      >
+          {children}
+
           {hasPluginBundle ? (
             <div className="skill-panel bundle-card">
               <div className="bundle-header">
@@ -368,99 +354,7 @@ export function SkillHeader({
             </div>
           ) : null}
           <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
-        </div>
-
-        <div className="skill-tag-row">
-          {tagEntries.length === 0 ? (
-            <span className="section-subtitle m-0">
-              No tags yet.
-            </span>
-          ) : (
-            tagEntries.map(([tag, versionId]) => (
-              <Badge key={tag}>
-                {tag}
-                <span className="tag-meta">
-                  v{versionById.get(versionId)?.version ?? versionId}
-                </span>
-                {canManage && tag !== "latest" ? (
-                  <button
-                    type="button"
-                    className="tag-delete"
-                    onClick={() => onTagDelete(tag)}
-                    aria-label={`Delete tag ${tag}`}
-                    title={`Delete tag "${tag}"`}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </Badge>
-            ))
-          )}
-        </div>
-
-        {canManage && historicalTagEntries.length > 0 ? (
-          <div className="skill-tag-history">
-            <div className="skill-tag-history-label">Historical tags</div>
-            <div className="skill-tag-row">
-              {historicalTagEntries.map(([tag, versionId]) => (
-                <Badge key={tag}>
-                  {tag}
-                  <span className="tag-meta">
-                    v{versionById.get(versionId)?.version ?? versionId}
-                  </span>
-                  {tag !== "latest" ? (
-                    <button
-                      type="button"
-                      className="tag-delete"
-                      onClick={() => onTagDelete(tag)}
-                      aria-label={`Delete tag ${tag}`}
-                      title={`Delete tag "${tag}"`}
-                    >
-                      ×
-                    </button>
-                  ) : null}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {canManage ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              onTagSubmit();
-            }}
-            className="tag-form"
-          >
-            <input
-              aria-label="Tag name"
-              className="search-input"
-              name="tagName"
-              value={tagName}
-              onChange={(event) => onTagNameChange(event.target.value)}
-              placeholder="latest…"
-            />
-            <select
-              aria-label="Tag version"
-              className="search-input"
-              name="tagVersion"
-              value={tagVersionId ?? ""}
-              onChange={(event) => onTagVersionChange(event.target.value as Id<"skillVersions">)}
-            >
-              {tagVersions.map((version) => (
-                <option key={version._id} value={version._id}>
-                  v{version.version}
-                </option>
-              ))}
-            </select>
-            <Button type="submit">
-              Update Tag
-            </Button>
-          </form>
-        ) : null}
-
-      </div>
+      </DetailHero>
     </>
   );
 }

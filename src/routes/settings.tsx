@@ -165,7 +165,7 @@ export function Settings() {
         <Card>
           <CardContent className="flex flex-col items-start gap-3">
             <span>Sign in to access settings.</span>
-            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+            <SignInButton />
           </CardContent>
         </Card>
       </Container>

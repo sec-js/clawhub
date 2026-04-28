@@ -1,4 +1,3 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   PackagePublishRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
@@ -9,6 +8,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
+import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -62,6 +62,7 @@ const internalRefs = internal as unknown as {
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
     insertAuditLogInternal: unknown;
+    requestRescanForApiTokenInternal: unknown;
     softDeletePackageInternal: unknown;
   };
   packagePublishTokens: {
@@ -90,12 +91,8 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
   try {
-    const userId = (await getAuthUserId(ctx)) ?? null;
+    const userId = (await getOptionalActiveAuthUserIdFromAction(ctx)) ?? null;
     if (!userId) return null;
-    const user = await runQueryRef<Doc<"users"> | null>(ctx, internal.users.getByIdInternal, {
-      userId,
-    });
-    if (!user || user.deletedAt || user.deactivatedAt) return null;
     return userId;
   } catch {
     // Public package reads should degrade to anonymous when cookie-backed auth is stale.
@@ -1040,6 +1037,31 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[1] === "rescan" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.requestRescanForApiTokenInternal,
+        {
+          actorUserId: auth.userId,
+          name: segments[0]!,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Rescan request failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
     return text("Not found", 404);
   }

@@ -11,11 +11,19 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { action, internalAction, internalMutation, internalQuery, query } from "./functions";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./functions";
 import {
   assertAdmin,
   assertModerator,
   getOptionalActiveAuthUserId,
+  requireUser,
   requireUserFromAction,
 } from "./lib/access";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
@@ -33,7 +41,11 @@ import {
 } from "./lib/packageRegistry";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
-import { getOwnerPublisher, getPublisherMembership } from "./lib/publishers";
+import {
+  assertCanManageOwnedResource,
+  getOwnerPublisher,
+  getPublisherMembership,
+} from "./lib/publishers";
 import {
   findOversizedPublishFile,
   getPublishFileSizeError,
@@ -43,6 +55,13 @@ import {
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
+import { getLatestPackageRescanTarget, insertPackageRescanRequest } from "./model/packages/rescans";
+import {
+  assertCanRequestRescan,
+  buildRescanState,
+  errorMessage,
+  finalizeInProgressRescanRequestsForTarget,
+} from "./model/rescans/policy";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_SEARCH_PAGE_SIZE = 200;
@@ -89,6 +108,9 @@ const internalRefs = internal as unknown as {
     createInternal: unknown;
     getByIdInternal: unknown;
     revokeInternal: unknown;
+  };
+  rescanRequests: {
+    markStatusInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -260,6 +282,7 @@ type DashboardPackageListItem = {
   createdAt: number;
   updatedAt: number;
   pendingReview?: true;
+  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestRelease: {
     version: string;
     createdAt: number;
@@ -430,6 +453,13 @@ async function toDashboardPackageListItem(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     pendingReview: pkg.scanStatus === "pending" ? true : undefined,
+    rescanState:
+      latestRelease && !latestRelease.softDeletedAt
+        ? await buildRescanState(ctx, {
+            kind: "plugin",
+            artifactId: latestRelease._id,
+          })
+        : null,
     latestRelease:
       latestRelease && !latestRelease.softDeletedAt
         ? {
@@ -950,12 +980,12 @@ async function requireTrustedPublisherEditor(
   pkg: Doc<"packages">,
   actorUserId: Id<"users">,
 ) {
-  if (pkg.ownerUserId === actorUserId) return;
-  if (!pkg.ownerPublisherId) throw new ConvexError("Forbidden");
-  const membership = await getPublisherMembership(ctx, pkg.ownerPublisherId, actorUserId);
-  if (!membership || membership.role === "publisher") {
-    throw new ConvexError("Forbidden");
-  }
+  await assertCanManageOwnedResource(ctx, {
+    actor: { _id: actorUserId },
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    allowPlatformAdmin: false,
+  });
 }
 
 export const getByName = query({
@@ -2410,10 +2440,16 @@ export const updateReleaseScanResultsInternal = internalMutation({
       await ctx.db.patch(args.releaseId, patch);
     }
     if (args.vtAnalysis !== undefined) {
-      await syncLatestPackageVerification(ctx, {
+      const updatedRelease = {
         ...activeRelease,
         ...patch,
-      } as Doc<"packageReleases">);
+      } as Doc<"packageReleases">;
+      await syncLatestPackageVerification(ctx, updatedRelease);
+      await finalizeInProgressRescanRequestsForTarget(
+        ctx,
+        { kind: "plugin", artifactId: args.releaseId },
+        updatedRelease,
+      );
     }
   },
 });
@@ -2445,7 +2481,13 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
+    const updatedRelease = { ...release, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
+    await finalizeInProgressRescanRequestsForTarget(
+      ctx,
+      { kind: "plugin", artifactId: args.releaseId },
+      updatedRelease,
+    );
   },
 });
 
@@ -2493,10 +2535,16 @@ export const updateReleaseStaticScanInternal = internalMutation({
 
     await ctx.db.patch(args.releaseId, patch);
 
-    await syncLatestPackageVerification(ctx, {
+    const updatedRelease = {
       ...activeRelease,
       ...patch,
-    } as Doc<"packageReleases">);
+    } as Doc<"packageReleases">;
+    await syncLatestPackageVerification(ctx, updatedRelease);
+    await finalizeInProgressRescanRequestsForTarget(
+      ctx,
+      { kind: "plugin", artifactId: args.releaseId },
+      updatedRelease,
+    );
   },
 });
 
@@ -2621,5 +2669,185 @@ export const backfillPackageReleaseScans = action({
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
+  },
+});
+
+async function markPackageRescanRequest(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  requestId: Id<"rescanRequests">,
+  status: "completed" | "failed",
+  error?: string,
+) {
+  await ctx.runMutation(
+    internalRefs.rescanRequests.markStatusInternal as never,
+    {
+      requestId,
+      status,
+      error,
+    } as never,
+  );
+}
+
+export const getRescanState = query({
+  args: {
+    packageId: v.id("packages"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const target = await getLatestPackageRescanTarget(ctx, args.packageId);
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: target.pkg.ownerUserId,
+      ownerPublisherId: target.pkg.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    return {
+      targetKind: "plugin" as const,
+      targetVersion: target.release.version,
+      packageReleaseId: target.release._id,
+      ...(await buildRescanState(ctx, {
+        kind: "plugin",
+        artifactId: target.release._id,
+      })),
+    };
+  },
+});
+
+export const getOwnerRescanStateByName = query({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    if (!viewerUserId) return null;
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) return null;
+
+    const release = await ctx.db.get(pkg.latestReleaseId);
+    if (!release || release.softDeletedAt) return null;
+
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
+    if (actor.role !== "admin") {
+      const canAccess = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
+      if (!canAccess) return null;
+    }
+
+    return {
+      targetKind: "plugin" as const,
+      targetVersion: release.version,
+      packageReleaseId: release._id,
+      ...(await buildRescanState(ctx, {
+        kind: "plugin",
+        artifactId: release._id,
+      })),
+    };
+  },
+});
+
+export const requestRescan = mutation({
+  args: {
+    packageId: v.id("packages"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const target = await getLatestPackageRescanTarget(ctx, args.packageId);
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: target.pkg.ownerUserId,
+      ownerPublisherId: target.pkg.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    await assertCanRequestRescan(ctx, {
+      kind: "plugin",
+      artifactId: target.release._id,
+    });
+
+    const requestId = await insertPackageRescanRequest(ctx, user, target);
+    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
+      requestId,
+      releaseId: target.release._id,
+    });
+
+    return {
+      requestId,
+      ...(await buildRescanState(ctx, {
+        kind: "plugin",
+        artifactId: target.release._id,
+      })),
+    };
+  },
+});
+
+export const requestRescanForApiTokenInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Plugin not found");
+    }
+
+    const target = await getLatestPackageRescanTarget(ctx, pkg._id);
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: target.pkg.ownerUserId,
+      ownerPublisherId: target.pkg.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    await assertCanRequestRescan(ctx, {
+      kind: "plugin",
+      artifactId: target.release._id,
+    });
+
+    const requestId = await insertPackageRescanRequest(ctx, actor, target);
+    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
+      requestId,
+      releaseId: target.release._id,
+    });
+
+    const state = await buildRescanState(ctx, {
+      kind: "plugin",
+      artifactId: target.release._id,
+    });
+    return {
+      ok: true,
+      targetKind: "package" as const,
+      name: target.pkg.normalizedName,
+      version: target.release.version,
+      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
+      remainingRequests: state.remainingRequests,
+      maxRequests: state.maxRequests,
+      pendingRequestId: requestId,
+    };
+  },
+});
+
+export const dispatchPackageRescanInternal = internalAction({
+  args: {
+    requestId: v.id("rescanRequests"),
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      await runActionRef(ctx, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
+        releaseId: args.releaseId,
+      });
+      await runActionRef(ctx, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+        releaseId: args.releaseId,
+      });
+      await runActionRef(ctx, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+        releaseId: args.releaseId,
+      });
+    } catch (error) {
+      await markPackageRescanRequest(ctx, args.requestId, "failed", errorMessage(error));
+      throw error;
+    }
   },
 });

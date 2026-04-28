@@ -5,10 +5,8 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { copyText, InstallCopyButton } from "./InstallCopyButton";
 import {
   buildSkillInstallTarget,
-  formatClawHubInstallCommand,
   formatOpenClawInstallCommand,
   formatOpenClawPrompt,
-  type SkillPackageManager,
   type SkillPromptMode,
 } from "./skillDetailUtils";
 import { Button } from "./ui/button";
@@ -18,8 +16,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-
-const PACKAGE_MANAGERS: SkillPackageManager[] = ["npm", "pnpm", "bun"];
 
 const PROMPT_OPTIONS: Array<{
   description: string;
@@ -56,7 +52,6 @@ export function SkillInstallSurface({
   clawdis,
 }: SkillInstallSurfaceProps) {
   const headingId = useId();
-  const [packageManager, setPackageManager] = useState<SkillPackageManager>("npm");
   const [promptMode, setPromptMode] = useState<SkillPromptMode>("install-and-setup");
   const [promptCopyState, setPromptCopyState] = useState<PromptCopyState>("idle");
   const promptResetTimeoutRef = useRef<number | null>(null);
@@ -81,10 +76,9 @@ export function SkillInstallSurface({
     }, 2000);
   };
 
-  const selectedPrompt = PROMPT_OPTIONS.find((option) => option.mode === promptMode) ?? PROMPT_OPTIONS[1];
+  const selectedPrompt =
+    PROMPT_OPTIONS.find((option) => option.mode === promptMode) ?? PROMPT_OPTIONS[1];
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const openClawCommand = formatOpenClawInstallCommand(slug);
-  const clawHubCommand = formatClawHubInstallCommand(slug, packageManager);
   const promptPreview = formatOpenClawPrompt({
     mode: promptMode,
     skillName: displayName,
@@ -130,109 +124,120 @@ export function SkillInstallSurface({
         Install
       </h2>
 
-      <div className="skill-install-grid">
-        <article className="skill-install-panel">
-          <div className="skill-install-panel-header">
-            <p className="skill-install-kicker">OpenClaw Prompt Flow</p>
-            <h3 className="skill-install-panel-title">Install with OpenClaw</h3>
-            <p className="skill-install-panel-copy">
-              Best for remote or guided setup. Copy the exact prompt, then paste it into OpenClaw
-              for <code translate="no">{installTarget}</code>.
-            </p>
-          </div>
+      <article className="skill-install-panel">
+        <div className="skill-install-panel-header">
+          <p className="skill-install-kicker">OpenClaw Prompt Flow</p>
+          <h3 className="skill-install-panel-title">Install with OpenClaw</h3>
+          <p className="skill-install-panel-copy">
+            Best for remote or guided setup. Copy the exact prompt, then paste it into OpenClaw
+            for <code translate="no">{installTarget}</code>.
+          </p>
+        </div>
 
-          <div className="skill-install-actions">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" className="skill-install-prompt-trigger">
-                  <span>Copy Prompt</span>
-                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="skill-install-menu">
-                {PROMPT_OPTIONS.map((option) => (
-                  <DropdownMenuItem key={option.mode} onSelect={() => selectPromptMode(option.mode)}>
-                    <div className="skill-install-menu-copy">
-                      <span className="skill-install-menu-label">{option.label}</span>
-                      <span className="skill-install-menu-description">{option.description}</span>
-                    </div>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <span className="skill-install-copy-feedback" aria-live="polite">
-              {promptFeedback}
-            </span>
-          </div>
-
-          <div className="skill-install-preview-meta">
-            <span className="skill-install-preview-label">Prompt Preview</span>
-            <span className="skill-install-preview-mode">{selectedPrompt.label}</span>
-          </div>
-
-          <pre className="skill-install-prompt-preview">
-            <code translate="no">{promptPreview}</code>
-          </pre>
-        </article>
-
-        <article className="skill-install-panel">
-          <div className="skill-install-panel-header">
-            <p className="skill-install-kicker">Command Line</p>
-            <h3 className="skill-install-panel-title">CLI Commands</h3>
-            <p className="skill-install-panel-copy">
-              Use the direct CLI path if you want to install manually and keep every step visible.
-            </p>
-          </div>
-
-          <div className="skill-install-command-card">
-            <div className="skill-install-command-header">
-              <div className="skill-install-command-copy">
-                <p className="skill-install-command-label">OpenClaw CLI</p>
-                <p className="skill-install-command-caption">Bare skill slug</p>
-              </div>
-              <InstallCopyButton
-                text={openClawCommand}
-                ariaLabel="Copy OpenClaw CLI command"
-              />
-            </div>
-            <pre className="skill-install-command">
-              <code translate="no">{openClawCommand}</code>
-            </pre>
-          </div>
-
-          <div className="skill-install-command-card">
-            <div className="skill-install-command-header">
-              <div className="skill-install-command-copy">
-                <p className="skill-install-command-label">ClawHub CLI</p>
-                <p className="skill-install-command-caption">Package manager switcher</p>
-              </div>
-              <InstallCopyButton
-                text={clawHubCommand}
-                ariaLabel="Copy ClawHub CLI command"
-              />
-            </div>
-
-            <div className="install-switcher-toggle" aria-label="ClawHub install command">
-              {PACKAGE_MANAGERS.map((entry) => (
-                <button
-                  key={entry}
-                  type="button"
-                  aria-label={`Use ${entry} for ClawHub install command`}
-                  aria-pressed={packageManager === entry}
-                  className={`install-switcher-pill${packageManager === entry ? " is-active" : ""}`}
-                  onClick={() => setPackageManager(entry)}
-                >
-                  {entry}
-                </button>
+        <div className="skill-install-actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" className="skill-install-prompt-trigger">
+                <span>Copy Prompt</span>
+                <ChevronDown className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="skill-install-menu">
+              {PROMPT_OPTIONS.map((option) => (
+                <DropdownMenuItem key={option.mode} onSelect={() => selectPromptMode(option.mode)}>
+                  <div className="skill-install-menu-copy">
+                    <span className="skill-install-menu-label">{option.label}</span>
+                    <span className="skill-install-menu-description">{option.description}</span>
+                  </div>
+                </DropdownMenuItem>
               ))}
-            </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span className="skill-install-copy-feedback" aria-live="polite">
+            {promptFeedback}
+          </span>
+        </div>
 
-            <pre className="skill-install-command">
-              <code translate="no">{clawHubCommand}</code>
-            </pre>
-          </div>
-        </article>
-      </div>
+        <div className="skill-install-preview-meta">
+          <span className="skill-install-preview-label">Prompt Preview</span>
+          <span className="skill-install-preview-mode">{selectedPrompt.label}</span>
+        </div>
+
+        <pre className="skill-install-prompt-preview">
+          <code translate="no">{promptPreview}</code>
+        </pre>
+      </article>
     </section>
+  );
+}
+
+export function SkillCommandLineCard({
+  slug,
+  displayName,
+  ownerHandle,
+  ownerId,
+  clawdis,
+}: SkillInstallSurfaceProps) {
+  const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
+  const openClawCommand = formatOpenClawInstallCommand(slug);
+  const promptPreview = formatOpenClawPrompt({
+    mode: "install-and-setup",
+    skillName: displayName,
+    slug,
+    ownerHandle,
+    ownerId,
+    clawdis,
+  });
+
+  return (
+    <article className="skill-install-command-card">
+      <div className="skill-install-command-header">
+        <h3 className="skill-install-panel-title">Install</h3>
+        <div className="install-switcher-toggle" role="tablist" aria-label="Install option">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeInstallTab === "cli"}
+            className={`install-switcher-pill${activeInstallTab === "cli" ? " is-active" : ""}`}
+            onClick={() => setActiveInstallTab("cli")}
+          >
+            CLI
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeInstallTab === "prompt"}
+            className={`install-switcher-pill${
+              activeInstallTab === "prompt" ? " is-active" : ""
+            }`}
+            onClick={() => setActiveInstallTab("prompt")}
+          >
+            Prompt
+          </button>
+        </div>
+      </div>
+
+      <div className="skill-install-command-wrap">
+        <pre
+          className={`skill-install-command${
+            activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
+          }`}
+        >
+          <code translate="no">
+            {activeInstallTab === "prompt" ? promptPreview : openClawCommand}
+          </code>
+        </pre>
+        <InstallCopyButton
+          text={activeInstallTab === "prompt" ? promptPreview : openClawCommand}
+          ariaLabel={
+            activeInstallTab === "prompt"
+              ? "Copy OpenClaw prompt"
+              : "Copy OpenClaw CLI command"
+          }
+          className="skill-install-command-inline-button"
+          showLabel={false}
+        />
+      </div>
+    </article>
   );
 }

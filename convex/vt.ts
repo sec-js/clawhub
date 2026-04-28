@@ -782,6 +782,11 @@ export const pollPackageReleaseScanResults = internalAction({
               attempt: attempt + 1,
             },
           );
+        } else {
+          await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+            releaseId: args.releaseId,
+            vtAnalysis: { status: "stale", checkedAt: Date.now() },
+          });
         }
         return;
       }
@@ -806,6 +811,11 @@ export const pollPackageReleaseScanResults = internalAction({
             attempt: attempt + 1,
           },
         );
+      } else {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+          releaseId: args.releaseId,
+          vtAnalysis: { status: "stale", checkedAt: Date.now() },
+        });
       }
     } catch (error) {
       console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
@@ -819,6 +829,11 @@ export const pollPackageReleaseScanResults = internalAction({
             attempt: attempt + 1,
           },
         );
+      } else {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+          releaseId: args.releaseId,
+          vtAnalysis: { status: "error", checkedAt: Date.now() },
+        });
       }
     }
   },

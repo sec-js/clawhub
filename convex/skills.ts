@@ -15,7 +15,14 @@ import {
   mutation,
   query,
 } from "./functions";
-import { assertAdmin, assertModerator, requireUser, requireUserFromAction } from "./lib/access";
+import {
+  assertAdmin,
+  assertModerator,
+  getOptionalActiveAuthUserId,
+  getOptionalActiveAuthUserIdFromAction,
+  requireUser,
+  requireUserFromAction,
+} from "./lib/access";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
@@ -56,6 +63,7 @@ import {
   toPublicUser,
 } from "./lib/public";
 import {
+  assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
   getOwnerPublisher,
   requirePublisherRole,
@@ -80,7 +88,6 @@ import {
   publishVersionForUser,
   queueHighlightedWebhook,
 } from "./lib/skillPublish";
-import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious, isSkillSuspicious } from "./lib/skillSafety";
 import {
@@ -89,7 +96,16 @@ import {
   extractDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
+import { readCanonicalStat } from "./lib/skillStats";
+import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
+import {
+  assertCanRequestRescan,
+  buildRescanState,
+  errorMessage,
+  finalizeInProgressRescanRequestsForTarget,
+} from "./model/rescans/policy";
+import { getLatestSkillRescanTarget, insertSkillRescanRequest } from "./model/skills/rescans";
 import schema from "./schema";
 
 export { publishVersionForUser } from "./lib/skillPublish";
@@ -507,20 +523,14 @@ async function syncSkillModerationFromLatestVersion(
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 }
 
-function buildConflictingSkillUrl(
-  skill: Doc<"skills">,
-  owner: SkillOwnerRef,
-) {
+function buildConflictingSkillUrl(skill: Doc<"skills">, owner: SkillOwnerRef) {
   if (!owner || owner.deletedAt || owner.deactivatedAt || !isPublicSkillDoc(skill)) return null;
   const ownerParam = owner.handle?.trim() || String(owner._id);
   if (!ownerParam) return null;
   return `/${encodeURIComponent(ownerParam)}/${encodeURIComponent(skill.slug)}`;
 }
 
-function buildSlugTakenErrorMessage(
-  skill: Doc<"skills">,
-  owner: SkillOwnerRef,
-) {
+function buildSlugTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef) {
   if (!owner || owner.deletedAt || owner.deactivatedAt) {
     return (
       "This slug is locked to a deleted or banned account. " +
@@ -533,10 +543,7 @@ function buildSlugTakenErrorMessage(
   return `${base} Existing skill: ${url}`;
 }
 
-function buildAliasTakenErrorMessage(
-  skill: Doc<"skills">,
-  owner: SkillOwnerRef,
-) {
+function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef) {
   const base = "Slug redirects to an existing skill. Choose a different slug.";
   const url = buildConflictingSkillUrl(skill, owner);
   if (!url) return base;
@@ -1138,6 +1145,40 @@ type ManagementSkillEntry = {
   owner: Doc<"users"> | null;
 };
 
+type DashboardSkillListItem = {
+  _id: Id<"skills">;
+  _creationTime: number;
+  slug: string;
+  displayName: string;
+  summary?: string;
+  ownerUserId: Id<"users">;
+  ownerPublisherId?: Id<"publishers">;
+  canonicalSkillId?: Id<"skills">;
+  forkOf?: Doc<"skills">["forkOf"];
+  latestVersionId?: Id<"skillVersions">;
+  tags: Doc<"skills">["tags"];
+  capabilityTags?: string[];
+  badges: Doc<"skills">["badges"];
+  stats: Doc<"skills">["stats"];
+  moderationStatus?: Doc<"skills">["moderationStatus"];
+  moderationReason?: string;
+  moderationVerdict?: Doc<"skills">["moderationVerdict"];
+  moderationFlags?: string[];
+  isSuspicious?: boolean;
+  pendingReview?: true;
+  qualityDecision?: NonNullable<Doc<"skills">["quality"]>["decision"];
+  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
+  latestVersion: {
+    version: string;
+    createdAt: number;
+    vtStatus: string | null;
+    llmStatus: string | null;
+    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
+  } | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type BadgeKind = Doc<"skillBadges">["kind"];
 
 async function buildPublicSkillEntries(
@@ -1368,6 +1409,66 @@ async function attachBadgesToSkills(ctx: QueryCtx, skills: Doc<"skills">[]) {
   }));
 }
 
+async function toDashboardSkillListItem(
+  ctx: QueryCtx,
+  skill: Doc<"skills"> & { badges?: Doc<"skills">["badges"] },
+): Promise<DashboardSkillListItem> {
+  const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+  const stats = {
+    ...skill.stats,
+    downloads: readCanonicalStat(skill, "downloads"),
+    stars: readCanonicalStat(skill, "stars"),
+    installsCurrent: readCanonicalStat(skill, "installsCurrent"),
+    installsAllTime: readCanonicalStat(skill, "installsAllTime"),
+  };
+
+  return {
+    _id: skill._id,
+    _creationTime: skill._creationTime,
+    slug: skill.slug,
+    displayName: skill.displayName,
+    summary: skill.summary,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    canonicalSkillId: skill.canonicalSkillId,
+    forkOf: skill.forkOf,
+    latestVersionId: skill.latestVersionId,
+    tags: skill.tags,
+    capabilityTags: skill.capabilityTags,
+    badges: skill.badges,
+    stats,
+    moderationStatus: skill.moderationStatus,
+    moderationReason: skill.moderationReason,
+    moderationVerdict: skill.moderationVerdict,
+    moderationFlags: skill.moderationFlags,
+    isSuspicious: skill.isSuspicious,
+    pendingReview:
+      skill.moderationReason === "pending.scan" || skill.moderationReason === "pending.scan.stale"
+        ? true
+        : undefined,
+    qualityDecision: skill.quality?.decision,
+    rescanState:
+      latestVersion && !latestVersion.softDeletedAt
+        ? await buildRescanState(ctx, {
+            kind: "skill",
+            artifactId: latestVersion._id,
+          })
+        : null,
+    latestVersion:
+      latestVersion && !latestVersion.softDeletedAt
+        ? {
+            version: latestVersion.version,
+            createdAt: latestVersion.createdAt,
+            vtStatus: latestVersion.vtAnalysis?.status ?? null,
+            llmStatus: latestVersion.llmAnalysis?.status ?? null,
+            staticScanStatus: latestVersion.staticScan?.status ?? null,
+          }
+        : null,
+    createdAt: skill.createdAt,
+    updatedAt: skill.updatedAt,
+  };
+}
+
 async function loadHighlightedSkills(ctx: QueryCtx, limit: number) {
   const entries = await ctx.db
     .query("skillBadges")
@@ -1442,7 +1543,7 @@ export const getBySlug = query({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const userId = await getAuthUserId(ctx);
+    const userId = await getOptionalActiveAuthUserId(ctx);
     const ownerPublisher = await getOwnerPublisher(ctx, {
       ownerPublisherId: skill.ownerPublisherId,
       ownerUserId: skill.ownerUserId,
@@ -2130,7 +2231,7 @@ export const list = query({
     }
     const ownerPublisherId = args.ownerPublisherId;
     if (ownerPublisherId) {
-      const userId = await getAuthUserId(ctx);
+      const userId = await getOptionalActiveAuthUserId(ctx);
       const ownerPublisher = await ctx.db.get(ownerPublisherId);
       const membership =
         userId &&
@@ -2167,36 +2268,9 @@ export const list = query({
       const withBadges = await attachBadgesToSkills(ctx, filtered);
 
       if (isOwnDashboard) {
-        return withBadges
-          .map((skill) => {
-            const publicSkill = toPublicSkill(skill);
-            if (publicSkill) return publicSkill;
-            const isPending =
-              skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
-            if (isPending) {
-              const { badges } = skill;
-              return {
-                _id: skill._id,
-                _creationTime: skill._creationTime,
-                slug: skill.slug,
-                displayName: skill.displayName,
-                summary: skill.summary,
-                ownerUserId: skill.ownerUserId,
-                ownerPublisherId: skill.ownerPublisherId,
-                canonicalSkillId: skill.canonicalSkillId,
-                forkOf: skill.forkOf,
-                latestVersionId: skill.latestVersionId,
-                tags: skill.tags,
-                badges,
-                stats: skill.stats,
-                createdAt: skill.createdAt,
-                updatedAt: skill.updatedAt,
-                pendingReview: true as const,
-              };
-            }
-            return null;
-          })
-          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+        return await Promise.all(
+          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
+        );
       }
 
       const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
@@ -2206,7 +2280,7 @@ export const list = query({
     }
     const ownerUserId = args.ownerUserId;
     if (ownerUserId) {
-      const userId = await getAuthUserId(ctx);
+      const userId = await getOptionalActiveAuthUserId(ctx);
       const isOwnDashboard = Boolean(userId && userId === ownerUserId);
       const entries = await ctx.db
         .query("skills")
@@ -2217,38 +2291,9 @@ export const list = query({
       const withBadges = await attachBadgesToSkills(ctx, filtered);
 
       if (isOwnDashboard) {
-        // For owner's own dashboard, include pending skills
-        return withBadges
-          .map((skill) => {
-            const publicSkill = toPublicSkill(skill);
-            if (publicSkill) return publicSkill;
-            // Include pending skills for owner
-            const isPending =
-              skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
-            if (isPending) {
-              // Use computed badges from attachBadgesToSkills, not stored skill.badges
-              const { badges } = skill;
-              return {
-                _id: skill._id,
-                _creationTime: skill._creationTime,
-                slug: skill.slug,
-                displayName: skill.displayName,
-                summary: skill.summary,
-                ownerUserId: skill.ownerUserId,
-                canonicalSkillId: skill.canonicalSkillId,
-                forkOf: skill.forkOf,
-                latestVersionId: skill.latestVersionId,
-                tags: skill.tags,
-                badges,
-                stats: skill.stats,
-                createdAt: skill.createdAt,
-                updatedAt: skill.updatedAt,
-                pendingReview: true as const,
-              };
-            }
-            return null;
-          })
-          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+        return await Promise.all(
+          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
+        );
       }
 
       const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
@@ -2822,7 +2867,10 @@ export const listPublicPageV4 = query({
     let scanInclusive = isFirstPage;
     let hasMore = false;
     let nextCursor: string | null = null;
-    let remainingRows = Math.max(numItems, Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, numItems * 12));
+    let remainingRows = Math.max(
+      numItems,
+      Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, numItems * 12),
+    );
 
     for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
       if (remainingRows <= 0) break;
@@ -3955,11 +4003,18 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
-    if (!version || version.skillId !== args.skillId) return { ok: true as const, skipped: "missing" as const };
+    if (!version || version.skillId !== args.skillId)
+      return { ok: true as const, skipped: "missing" as const };
 
     await ctx.db.patch(version._id, {
       staticScan: args.staticScan,
     });
+    const updatedVersion = { ...version, staticScan: args.staticScan };
+    await finalizeInProgressRescanRequestsForTarget(
+      ctx,
+      { kind: "skill", artifactId: version._id },
+      updatedVersion,
+    );
 
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return { ok: true as const, skipped: "missing" as const };
@@ -3969,7 +4024,6 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
 
     const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
     const now = Date.now();
-    const updatedVersion = { ...version, staticScan: args.staticScan };
     const basePatch = buildScannerModerationPatchFromVersion({
       owner,
       version: updatedVersion,
@@ -4001,37 +4055,39 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
   },
 });
 
-export const scanSkillVersionStaticallyInternal: ReturnType<typeof internalAction> = internalAction({
-  args: {
-    skillId: v.id("skills"),
-    versionId: v.id("skillVersions"),
+export const scanSkillVersionStaticallyInternal: ReturnType<typeof internalAction> = internalAction(
+  {
+    args: {
+      skillId: v.id("skills"),
+      versionId: v.id("skillVersions"),
+    },
+    handler: async (ctx, args) => {
+      const [skill, version] = await Promise.all([
+        ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId: args.skillId }),
+        ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId: args.versionId }),
+      ]);
+
+      if (!skill || !version) {
+        return { ok: true as const, skipped: "missing" as const };
+      }
+
+      const staticScan = await runStaticPublishScan(ctx, {
+        slug: skill.slug,
+        displayName: skill.displayName,
+        summary: skill.summary ?? undefined,
+        frontmatter: version.parsed?.frontmatter ?? {},
+        metadata: version.parsed?.metadata,
+        files: version.files,
+      });
+
+      return await ctx.runMutation(internal.skills.updateSkillVersionStaticScanInternal, {
+        skillId: skill._id,
+        versionId: version._id,
+        staticScan,
+      });
+    },
   },
-  handler: async (ctx, args) => {
-    const [skill, version] = await Promise.all([
-      ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId: args.skillId }),
-      ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId: args.versionId }),
-    ]);
-
-    if (!skill || !version) {
-      return { ok: true as const, skipped: "missing" as const };
-    }
-
-    const staticScan = await runStaticPublishScan(ctx, {
-      slug: skill.slug,
-      displayName: skill.displayName,
-      summary: skill.summary ?? undefined,
-      frontmatter: version.parsed?.frontmatter ?? {},
-      metadata: version.parsed?.metadata,
-      files: version.files,
-    });
-
-    return await ctx.runMutation(internal.skills.updateSkillVersionStaticScanInternal, {
-      skillId: skill._id,
-      versionId: version._id,
-      staticScan,
-    });
-  },
-});
+);
 
 export const backfillSkillStaticScansInternal: ReturnType<typeof internalAction> = internalAction({
   args: {
@@ -4041,10 +4097,13 @@ export const backfillSkillStaticScansInternal: ReturnType<typeof internalAction>
   },
   handler: async (ctx, args) => {
     const batchSize = Math.max(1, Math.min(args.batchSize ?? 25, 100));
-    const batch = await ctx.runQuery(internal.skills.getActiveSkillBatchForStaticScanBackfillInternal, {
-      cursor: args.cursor,
-      batchSize,
-    });
+    const batch = await ctx.runQuery(
+      internal.skills.getActiveSkillBatchForStaticScanBackfillInternal,
+      {
+        cursor: args.cursor,
+        batchSize,
+      },
+    );
 
     let rescanned = args.rescanned ?? 0;
     for (const skill of batch.skills) {
@@ -4081,6 +4140,156 @@ export const backfillSkillStaticScans: ReturnType<typeof action> = action({
     return await ctx.runAction(internal.skills.backfillSkillStaticScansInternal, {
       batchSize: args.batchSize,
     });
+  },
+});
+
+async function markSkillRescanRequest(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  requestId: Id<"rescanRequests">,
+  status: "completed" | "failed",
+  error?: string,
+) {
+  await ctx.runMutation(
+    internal.rescanRequests.markStatusInternal as never,
+    {
+      requestId,
+      status,
+      error,
+    } as never,
+  );
+}
+
+export const getRescanState = query({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const target = await getLatestSkillRescanTarget(ctx, args.skillId);
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: target.skill.ownerUserId,
+      ownerPublisherId: target.skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    return {
+      targetKind: "skill" as const,
+      targetVersion: target.version.version,
+      skillVersionId: target.version._id,
+      ...(await buildRescanState(ctx, {
+        kind: "skill",
+        artifactId: target.version._id,
+      })),
+    };
+  },
+});
+
+export const requestRescan = mutation({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const target = await getLatestSkillRescanTarget(ctx, args.skillId);
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: target.skill.ownerUserId,
+      ownerPublisherId: target.skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    await assertCanRequestRescan(ctx, {
+      kind: "skill",
+      artifactId: target.version._id,
+    });
+
+    const requestId = await insertSkillRescanRequest(ctx, user, target);
+    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
+      requestId,
+      skillId: target.skill._id,
+      versionId: target.version._id,
+    });
+
+    return {
+      requestId,
+      ...(await buildRescanState(ctx, {
+        kind: "skill",
+        artifactId: target.version._id,
+      })),
+    };
+  },
+});
+
+export const requestRescanForApiTokenInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug.trim().toLowerCase());
+    const skill = resolved.skill;
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const target = await getLatestSkillRescanTarget(ctx, skill._id);
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: target.skill.ownerUserId,
+      ownerPublisherId: target.skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    await assertCanRequestRescan(ctx, {
+      kind: "skill",
+      artifactId: target.version._id,
+    });
+
+    const requestId = await insertSkillRescanRequest(ctx, actor, target);
+    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
+      requestId,
+      skillId: target.skill._id,
+      versionId: target.version._id,
+    });
+
+    const state = await buildRescanState(ctx, {
+      kind: "skill",
+      artifactId: target.version._id,
+    });
+    return {
+      ok: true,
+      targetKind: "skill" as const,
+      name: target.skill.slug,
+      version: target.version.version,
+      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
+      remainingRequests: state.remainingRequests,
+      maxRequests: state.maxRequests,
+      pendingRequestId: requestId,
+    };
+  },
+});
+
+export const dispatchSkillRescanInternal: ReturnType<typeof internalAction> = internalAction({
+  args: {
+    requestId: v.id("rescanRequests"),
+    skillId: v.id("skills"),
+    versionId: v.id("skillVersions"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      await ctx.runAction(internal.skills.scanSkillVersionStaticallyInternal, {
+        skillId: args.skillId,
+        versionId: args.versionId,
+      });
+      await ctx.runAction(internal.vt.scanWithVirusTotal, {
+        versionId: args.versionId,
+      });
+      await ctx.runAction(internal.llmEval.evaluateWithLlm, {
+        versionId: args.versionId,
+      });
+    } catch (error) {
+      await markSkillRescanRequest(ctx, args.requestId, "failed", errorMessage(error));
+      throw error;
+    }
   },
 });
 
@@ -4612,6 +4821,11 @@ export const updateVersionScanResultsInternal = internalMutation({
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.versionId, patch);
+      await finalizeInProgressRescanRequestsForTarget(
+        ctx,
+        { kind: "skill", artifactId: args.versionId },
+        { ...version, ...patch },
+      );
     }
   },
 });
@@ -4645,6 +4859,11 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     if (!version) return;
     const nextVersion = { ...version, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis });
+    await finalizeInProgressRescanRequestsForTarget(
+      ctx,
+      { kind: "skill", artifactId: version._id },
+      nextVersion,
+    );
 
     const skill = await ctx.db.get(version.skillId);
     if (!skill || skill.latestVersionId !== version._id) return;
@@ -5014,7 +5233,7 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
   })) as Doc<"skills"> | null;
   if (!skill) return false;
 
-  const authUserId = await getAuthUserId(ctx);
+  const authUserId = await getOptionalActiveAuthUserIdFromAction(ctx);
   if (authUserId) {
     if (authUserId === skill.ownerUserId && !skill.softDeletedAt && !version.softDeletedAt) {
       return true;
@@ -5485,7 +5704,10 @@ export const changeOwner = mutation({
       lastReviewedAt: now,
       updatedAt: now,
     });
-    await adjustUserSkillStatsForSkillChange(ctx, skill, { ...skill, ownerUserId: args.ownerUserId });
+    await adjustUserSkillStatsForSkillChange(ctx, skill, {
+      ...skill,
+      ownerUserId: args.ownerUserId,
+    });
 
     const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id);
     for (const embedding of embeddings) {

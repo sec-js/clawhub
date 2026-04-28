@@ -124,7 +124,7 @@ describe("Header", () => {
 		expect(screen.queryByText("Packages")).toBeNull();
 	});
 
-	it("renders direct desktop theme family controls and plain Skills tab", () => {
+	it("renders simplified desktop nav and theme toggle", () => {
 		siteModeMock.mockReturnValue("skills");
 		setThemeMock.mockClear();
 		setModeMock.mockClear();
@@ -132,22 +132,27 @@ describe("Header", () => {
 		render(<Header />);
 
 		expect(
-			screen.getByRole("button", { name: /Cycle theme mode/i }),
+			screen.getByRole("button", { name: /Toggle theme\. Current: system/i }),
 		).toBeTruthy();
 		expect(screen.getAllByText("Skills")).toHaveLength(1);
-		expect(screen.getAllByText("Users")).toHaveLength(1);
+		expect(screen.getAllByText("Plugins")).toHaveLength(1);
+		expect(screen.queryByText("Users")).toBeNull();
+		expect(screen.queryByText("Dashboard")).toBeNull();
+		expect(screen.queryByText("Manage")).toBeNull();
 		expect(
 			screen.getByPlaceholderText("Search skills, plugins, users"),
 		).toBeTruthy();
 
-		fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
-		expect(setModeMock).toHaveBeenCalledWith("light");
+		fireEvent.click(
+			screen.getByRole("button", { name: /Toggle theme\. Current: system/i }),
+		);
+		expect(setModeMock).toHaveBeenCalledWith("dark");
 
 		fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
 		expect(screen.getAllByText("Home")).toHaveLength(1);
 		expect(screen.getAllByText("Skills")).toHaveLength(2);
-		expect(screen.getAllByText("Users")).toHaveLength(2);
+		expect(screen.getAllByText("Plugins")).toHaveLength(2);
 	});
 
 	it("shows Home above Skills in the mobile menu", () => {
