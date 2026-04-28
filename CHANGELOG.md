@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Moderation: calibrate VirusTotal Code Insight suspicious verdicts so uncorroborated AI-only findings do not keep otherwise clean skills quarantined (#1830, #1841) (thanks @deepujain).
+
 ## 0.11.0 - 2026-04-28
 
 ### Changed
