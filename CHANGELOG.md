@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-04-28
+
 ### Changed
 
 - Docs: clarify that ClawHub does not support paid skills, per-skill pricing, or paywalled releases (#1752, #1844) (thanks @deepujain).

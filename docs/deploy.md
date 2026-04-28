@@ -52,7 +52,7 @@ Use the GitHub Actions workflow:
 gh workflow run clawhub-cli-npm-release.yml \
   --repo openclaw/clawhub \
   --ref main \
-  -f tag=v0.10.0 \
+  -f tag=v0.11.0 \
   -f preflight_only=true
 ```
 
