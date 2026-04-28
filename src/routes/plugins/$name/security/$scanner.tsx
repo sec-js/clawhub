@@ -75,7 +75,7 @@ export const Route = createFileRoute("/plugins/$name/security/$scanner")({
       scanner === "virustotal"
         ? "VirusTotal"
         : scanner === "openclaw"
-          ? "OpenClaw"
+          ? "ClawScan"
           : "Static analysis";
     return {
       meta: [
@@ -130,7 +130,6 @@ function PluginSecurityScannerRoute() {
         ownerUserId: null,
         ownerPublisherId: null,
         detailPath: `/plugins/${encodeURIComponent(name)}`,
-        securityBasePath: `/plugins/${encodeURIComponent(name)}/security`,
       }}
       sha256hash={release.sha256hash ?? null}
       vtAnalysis={release.vtAnalysis ?? null}

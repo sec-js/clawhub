@@ -1144,6 +1144,7 @@ type DashboardSkillListItem = {
   isSuspicious?: boolean;
   pendingReview?: true;
   qualityDecision?: NonNullable<Doc<"skills">["quality"]>["decision"];
+  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestVersion: {
     version: string;
     createdAt: number;
@@ -1423,6 +1424,13 @@ async function toDashboardSkillListItem(
         ? true
         : undefined,
     qualityDecision: skill.quality?.decision,
+    rescanState:
+      latestVersion && !latestVersion.softDeletedAt
+        ? await buildRescanState(ctx, {
+            kind: "skill",
+            artifactId: latestVersion._id,
+          })
+        : null,
     latestVersion:
       latestVersion && !latestVersion.softDeletedAt
         ? {
@@ -4184,6 +4192,55 @@ export const requestRescan = mutation({
         kind: "skill",
         artifactId: target.version._id,
       })),
+    };
+  },
+});
+
+export const requestRescanForApiTokenInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug.trim().toLowerCase());
+    const skill = resolved.skill;
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const target = await getLatestSkillRescanTarget(ctx, skill._id);
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: target.skill.ownerUserId,
+      ownerPublisherId: target.skill.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    await assertCanRequestRescan(ctx, {
+      kind: "skill",
+      artifactId: target.version._id,
+    });
+
+    const requestId = await insertSkillRescanRequest(ctx, actor, target);
+    await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
+      requestId,
+      skillId: target.skill._id,
+      versionId: target.version._id,
+    });
+
+    const state = await buildRescanState(ctx, {
+      kind: "skill",
+      artifactId: target.version._id,
+    });
+    return {
+      ok: true,
+      targetKind: "skill" as const,
+      name: target.skill.slug,
+      version: target.version.version,
+      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
+      remainingRequests: state.remainingRequests,
+      maxRequests: state.maxRequests,
+      pendingRequestId: requestId,
     };
   },
 });

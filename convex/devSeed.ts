@@ -2,11 +2,13 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
 import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
+import { generateToken, hashToken } from "./lib/tokens";
 import { MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE } from "./model/rescans/policy";
 
 type SeedSkillSpec = {
@@ -32,6 +34,7 @@ type SeedMutationResult = Record<string, unknown>;
 const LOCAL_SEED_HANDLE = "local";
 const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
+const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
 const FLAGGED_SKILL_MD = `---
 name: local-flagged-wallet-sync
 description: Local dev fixture for flagged dashboard and rescan UI.
@@ -47,6 +50,17 @@ const FLAGGED_PLUGIN_README = `# Local Flagged Runtime Plugin
 This seeded plugin is intentionally flagged so local development can exercise plugin owner
 inventory and cap-exhausted rescan UI.
 `;
+const SCANNED_PLUGIN_README = `# Local Scanned Runtime Plugin
+
+This seeded plugin is public and intentionally has completed scan results so local development can
+preview plugin scanner detail pages without owner-only visibility.
+`;
+
+type RoleHelpFixtureUser = {
+  handle: string;
+  displayName: string;
+  role: "admin" | "user";
+};
 
 const SEED_SKILLS: SeedSkillSpec[] = [
   {
@@ -368,9 +382,11 @@ async function seedNixSkillsHandler(
     results.push({ slug: spec.slug, ...result });
   }
 
-  const [flaggedSkillStorageId, flaggedPluginStorageId] = await Promise.all([
+  const [flaggedSkillStorageId, flaggedPluginStorageId, scannedPluginStorageId] =
+    await Promise.all([
     ctx.storage.store(new Blob([FLAGGED_SKILL_MD], { type: "text/markdown" })),
     ctx.storage.store(new Blob([FLAGGED_PLUGIN_README], { type: "text/markdown" })),
+    ctx.storage.store(new Blob([SCANNED_PLUGIN_README], { type: "text/markdown" })),
   ]);
   const fixtureResult: SeedMutationResult = await ctx.runMutation(
     internal.devSeed.seedRescanUxFixturesMutation,
@@ -380,6 +396,8 @@ async function seedNixSkillsHandler(
       flaggedSkillMd: FLAGGED_SKILL_MD,
       flaggedPluginStorageId,
       flaggedPluginReadme: FLAGGED_PLUGIN_README,
+      scannedPluginStorageId,
+      scannedPluginReadme: SCANNED_PLUGIN_README,
     },
   );
   results.push({ slug: FLAGGED_SKILL_SLUG, ...fixtureResult });
@@ -506,8 +524,8 @@ async function findSeedSkillFixture(ctx: MutationCtx) {
     .unique();
 }
 
-async function deleteSeedPluginFixture(ctx: MutationCtx) {
-  const existing = await findSeedPluginFixture(ctx);
+async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
+  const existing = await findSeedPluginFixtureByName(ctx, name);
   if (!existing) return;
 
   const releases = await ctx.db
@@ -521,11 +539,27 @@ async function deleteSeedPluginFixture(ctx: MutationCtx) {
   await ctx.db.delete(existing._id);
 }
 
-async function findSeedPluginFixture(ctx: MutationCtx) {
+async function deleteSeedPluginFixture(ctx: MutationCtx) {
+  await deleteSeedPluginFixtureByName(ctx, FLAGGED_PLUGIN_NAME);
+}
+
+async function deleteScannedPluginFixture(ctx: MutationCtx) {
+  await deleteSeedPluginFixtureByName(ctx, SCANNED_PLUGIN_NAME);
+}
+
+async function findSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
   return await ctx.db
     .query("packages")
-    .withIndex("by_name", (q) => q.eq("normalizedName", normalizePackageName(FLAGGED_PLUGIN_NAME)))
+    .withIndex("by_name", (q) => q.eq("normalizedName", normalizePackageName(name)))
     .unique();
+}
+
+async function findSeedPluginFixture(ctx: MutationCtx) {
+  return await findSeedPluginFixtureByName(ctx, FLAGGED_PLUGIN_NAME);
+}
+
+async function findScannedPluginFixture(ctx: MutationCtx) {
+  return await findSeedPluginFixtureByName(ctx, SCANNED_PLUGIN_NAME);
 }
 
 function staticMaliciousScan(now: number) {
@@ -543,6 +577,26 @@ function staticMaliciousScan(now: number) {
       },
     ],
     summary: "Local dev fixture intentionally flagged as malicious.",
+    engineVersion: "local-dev-fixture",
+    checkedAt: now,
+  };
+}
+
+function staticSuspiciousScan(now: number) {
+  return {
+    status: "suspicious" as const,
+    reasonCodes: ["suspicious.local_dev_fixture"],
+    findings: [
+      {
+        code: "suspicious.local_dev_fixture",
+        severity: "warn" as const,
+        file: "README.md",
+        line: 3,
+        message: "Local dev fixture exercises scanner evidence UI for a public plugin.",
+        evidence: "runtime plugin requests local tool execution",
+      },
+    ],
+    summary: "Local dev fixture completed static analysis with a suspicious finding.",
     engineVersion: "local-dev-fixture",
     checkedAt: now,
   };
@@ -602,6 +656,8 @@ type SeedRescanUxFixturesArgs = {
   flaggedSkillMd: string;
   flaggedPluginStorageId: Id<"_storage">;
   flaggedPluginReadme: string;
+  scannedPluginStorageId: Id<"_storage">;
+  scannedPluginReadme: string;
 };
 
 export async function seedRescanUxFixturesHandler(
@@ -610,7 +666,8 @@ export async function seedRescanUxFixturesHandler(
 ) {
   const existingSkill = await findSeedSkillFixture(ctx);
   const existingPlugin = await findSeedPluginFixture(ctx);
-  if (existingSkill && existingPlugin && !args.reset) {
+  const existingScannedPlugin = await findScannedPluginFixture(ctx);
+  if (existingSkill && existingPlugin && existingScannedPlugin && !args.reset) {
     return {
       ok: true,
       skipped: true,
@@ -620,15 +677,19 @@ export async function seedRescanUxFixturesHandler(
       flaggedSkillVersionId: existingSkill.latestVersionId,
       flaggedPluginId: existingPlugin._id,
       flaggedPluginReleaseId: existingPlugin.latestReleaseId,
+      scannedPluginId: existingScannedPlugin._id,
+      scannedPluginReleaseId: existingScannedPlugin.latestReleaseId,
     };
   }
 
   await deleteSeedSkillFixture(ctx);
   await deleteSeedPluginFixture(ctx);
+  await deleteScannedPluginFixture(ctx);
 
   const now = Date.now();
   const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
   const staticScan = staticMaliciousScan(now);
+  const scannedStaticScan = staticSuspiciousScan(now);
 
   const skillId = await ctx.db.insert("skills", {
     slug: FLAGGED_SKILL_SLUG,
@@ -859,6 +920,136 @@ export async function seedRescanUxFixturesHandler(
     count: MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE,
     now,
   });
+
+  const scannedPackageId = await ctx.db.insert("packages", {
+    name: SCANNED_PLUGIN_NAME,
+    normalizedName: normalizePackageName(SCANNED_PLUGIN_NAME),
+    displayName: "Local Scanned Runtime Plugin",
+    summary: "Seeded public plugin with completed security scans for scanner page previews.",
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    runtimeId: "local.scanned.runtime",
+    sourceRepo: "openclaw/local-dev-fixture",
+    latestReleaseId: undefined,
+    latestVersionSummary: undefined,
+    tags: {},
+    capabilityTags: ["dev-tools", "security"],
+    executesCode: true,
+    compatibility: { pluginApiRange: ">=0.1.0" },
+    capabilities: {
+      executesCode: true,
+      runtimeId: "local.scanned.runtime",
+      pluginKind: "runtime",
+      capabilityTags: ["dev-tools", "security"],
+    },
+    verification: {
+      tier: "structural",
+      scope: "artifact-only",
+      summary: "Local dev fixture completed security scans with reviewable findings.",
+      sourceRepo: "openclaw/local-dev-fixture",
+      scanStatus: "suspicious",
+    },
+    scanStatus: "suspicious",
+    stats: { downloads: 7, installs: 1, stars: 1, versions: 0 },
+    softDeletedAt: undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const scannedPackageReleaseId = await ctx.db.insert("packageReleases", {
+    packageId: scannedPackageId,
+    version: "0.1.0",
+    changelog: "Seeded public scanned release for plugin scanner page previews.",
+    summary: "Seeded scanned plugin release.",
+    distTags: ["latest"],
+    files: [
+      {
+        path: "README.md",
+        size: args.scannedPluginReadme.length,
+        storageId: args.scannedPluginStorageId,
+        sha256: "seeded-scanned-plugin",
+        contentType: "text/markdown",
+      },
+    ],
+    integritySha256: "seeded-scanned-plugin-integrity",
+    extractedPackageJson: {
+      name: SCANNED_PLUGIN_NAME,
+      version: "0.1.0",
+    },
+    compatibility: { pluginApiRange: ">=0.1.0" },
+    capabilities: {
+      executesCode: true,
+      runtimeId: "local.scanned.runtime",
+      pluginKind: "runtime",
+      capabilityTags: ["dev-tools", "security"],
+    },
+    verification: {
+      tier: "structural",
+      scope: "artifact-only",
+      summary: "Local dev fixture completed security scans with reviewable findings.",
+      sourceRepo: "openclaw/local-dev-fixture",
+      scanStatus: "suspicious",
+    },
+    sha256hash: "seeded-scanned-plugin-hash",
+    vtAnalysis: {
+      status: "clean",
+      verdict: "clean",
+      analysis: "Local dev fixture scanned clean by VirusTotal.",
+      source: "local-dev-seed",
+      checkedAt: now,
+    },
+    llmAnalysis: {
+      status: "suspicious",
+      verdict: "suspicious",
+      confidence: "medium",
+      summary: "Local dev fixture flagged for review because it executes local tools.",
+      dimensions: [
+        {
+          name: "execution",
+          label: "Local execution",
+          rating: "concern",
+          detail: "Runtime plugin executes local tooling and should be reviewed before install.",
+        },
+      ],
+      guidance: "Review the runtime command surface before trusting this plugin.",
+      findings: "The fixture is intentionally safe, but models a plugin with reviewable behavior.",
+      model: "local-dev-seed",
+      checkedAt: now,
+    },
+    staticScan: scannedStaticScan,
+    source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
+    createdBy: userId,
+    publishActor: { kind: "user", userId },
+    createdAt: now,
+    softDeletedAt: undefined,
+  });
+  await ctx.db.patch(scannedPackageId, {
+    latestReleaseId: scannedPackageReleaseId,
+    latestVersionSummary: {
+      version: "0.1.0",
+      createdAt: now,
+      changelog: "Seeded public scanned release for plugin scanner page previews.",
+      compatibility: { pluginApiRange: ">=0.1.0" },
+      capabilities: {
+        executesCode: true,
+        runtimeId: "local.scanned.runtime",
+        pluginKind: "runtime",
+        capabilityTags: ["dev-tools", "security"],
+      },
+      verification: {
+        tier: "structural",
+        scope: "artifact-only",
+        summary: "Local dev fixture completed security scans with reviewable findings.",
+        sourceRepo: "openclaw/local-dev-fixture",
+        scanStatus: "suspicious",
+      },
+    },
+    tags: { latest: scannedPackageReleaseId },
+    stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
+    updatedAt: now,
+  });
   await ctx.db.patch(userId, {
     publishedSkills: 5,
     totalStars: 1,
@@ -874,6 +1065,8 @@ export async function seedRescanUxFixturesHandler(
     flaggedSkillVersionId: skillVersionId,
     flaggedPluginId: packageId,
     flaggedPluginReleaseId: packageReleaseId,
+    scannedPluginId: scannedPackageId,
+    scannedPluginReleaseId: scannedPackageReleaseId,
   };
 }
 
@@ -884,9 +1077,91 @@ export const seedRescanUxFixturesMutation = internalMutation({
     flaggedSkillMd: v.string(),
     flaggedPluginStorageId: v.id("_storage"),
     flaggedPluginReadme: v.string(),
+    scannedPluginStorageId: v.id("_storage"),
+    scannedPluginReadme: v.string(),
   },
   handler: seedRescanUxFixturesHandler,
 });
+
+export const seedCliRoleHelpFixtures = rawInternalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const admin = await upsertRoleHelpFixtureUser(ctx, {
+      handle: "cli-admin",
+      displayName: "CLI Admin",
+      role: "admin",
+    });
+    const user = await upsertRoleHelpFixtureUser(ctx, {
+      handle: "cli-user",
+      displayName: "CLI User",
+      role: "user",
+    });
+
+    const adminToken = await replaceRoleHelpFixtureToken(ctx, admin._id, now);
+    const userToken = await replaceRoleHelpFixtureToken(ctx, user._id, now);
+    return {
+      ok: true,
+      admin: { handle: admin.handle, role: admin.role, token: adminToken },
+      user: { handle: user.handle, role: user.role, token: userToken },
+    };
+  },
+});
+
+async function upsertRoleHelpFixtureUser(ctx: MutationCtx, user: RoleHelpFixtureUser) {
+  const now = Date.now();
+  const existing = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", user.handle))
+    .unique();
+  const patch = {
+    handle: user.handle,
+    displayName: user.displayName,
+    role: user.role,
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+    updatedAt: now,
+  };
+  if (existing) {
+    await ctx.db.patch(existing._id, patch);
+    return { ...existing, ...patch };
+  }
+  const userId = await ctx.db.insert("users", {
+    ...patch,
+    createdAt: now,
+  });
+  const created = await ctx.db.get(userId);
+  if (!created) throw new Error(`Failed to create ${user.handle}`);
+  return created;
+}
+
+async function replaceRoleHelpFixtureToken(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  now: number,
+) {
+  const existingTokens = await ctx.db
+    .query("apiTokens")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  for (const token of existingTokens) {
+    if (token.label === "CLI role help e2e") {
+      await ctx.db.patch(token._id, { revokedAt: now });
+    }
+  }
+
+  const { token, prefix } = generateToken();
+  await ctx.db.insert("apiTokens", {
+    userId,
+    label: "CLI role help e2e",
+    prefix,
+    tokenHash: await hashToken(token),
+    createdAt: now,
+    lastUsedAt: undefined,
+    revokedAt: undefined,
+  });
+  return token;
+}
 
 export const seedSkillMutation = internalMutation({
   args: {

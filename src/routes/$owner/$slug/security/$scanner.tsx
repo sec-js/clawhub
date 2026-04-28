@@ -51,7 +51,7 @@ export const Route = createFileRoute("/$owner/$slug/security/$scanner")({
       scanner === "virustotal"
         ? "VirusTotal"
         : scanner === "openclaw"
-          ? "OpenClaw"
+          ? "ClawScan"
           : "Static analysis";
     const meta = buildSkillMeta({
       slug: params.slug,
@@ -111,7 +111,6 @@ function SkillSecurityScannerRoute() {
         ownerUserId: skill.ownerUserId,
         ownerPublisherId: skill.ownerPublisherId ?? null,
         detailPath: `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}`,
-        securityBasePath: `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/security`,
       }}
       sha256hash={latestVersion.sha256hash ?? null}
       vtAnalysis={latestVersion.vtAnalysis ?? null}

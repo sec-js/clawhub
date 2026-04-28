@@ -53,10 +53,6 @@ const SOULS_SEARCH = {
   focus: undefined,
 } as const;
 
-const USERS_SEARCH = { q: undefined } as const;
-
-const MANAGEMENT_SEARCH = { skill: undefined } as const;
-
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
 // These map to the "content-type" tabs: Skills | Plugins | Souls
@@ -97,55 +93,6 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     soulModeHide: false,
     activePathPrefixes: ["/soul/"],
     featureFlag: FEATURE_SOULS,
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Secondary nav items (secondary tabs row + mobile dropdown lower section)
-// ---------------------------------------------------------------------------
-
-export const SECONDARY_NAV_ITEMS: NavItem[] = [
-  {
-    label: "Users",
-    to: "/users",
-    search: USERS_SEARCH,
-    authRequired: false,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: true,
-  },
-  {
-    label: "About",
-    to: "/about",
-    authRequired: false,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: true,
-  },
-  {
-    label: "Stars",
-    to: "/stars",
-    authRequired: true,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: false,
-  },
-  {
-    label: "Dashboard",
-    to: "/dashboard",
-    authRequired: true,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: false,
-  },
-  {
-    label: "Management",
-    to: "/management",
-    search: MANAGEMENT_SEARCH,
-    authRequired: true,
-    staffOnly: true,
-    soulModeOnly: false,
-    soulModeHide: false,
   },
 ];
 
@@ -199,15 +146,9 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
   {
     title: "Community",
     items: [
+      { kind: "link", label: "About", to: "/about" },
       { kind: "external", label: "GitHub", href: "https://github.com/openclaw/clawhub" },
       { kind: "external", label: "OpenClaw", href: "https://openclaw.ai" },
-    ],
-  },
-  {
-    title: "Platform",
-    items: [
-      { kind: "external", label: "Deployed on Vercel", href: "https://vercel.com" },
-      { kind: "external", label: "Powered by Convex", href: "https://www.convex.dev" },
     ],
   },
 ];

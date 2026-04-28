@@ -1,5 +1,5 @@
-import { api, internal } from "../_generated/api";
 import { normalizeTextContentType } from "clawhub-schema";
+import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
@@ -230,6 +230,16 @@ type SkillSecuritySnapshot = {
     } | null;
   };
 };
+
+const internalRefs = internal as unknown as {
+  skills: {
+    requestRescanForApiTokenInternal: unknown;
+  };
+};
+
+async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
+  return (await ctx.runMutation(ref as never, args as never)) as T;
+}
 
 function isDefinitiveSecurityStatus(
   status: NormalizedSecurityStatus | null | undefined,
@@ -1162,6 +1172,29 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("skill", error, rate.headers);
+    }
+  }
+
+  if (segments.length === 2 && action === "rescan") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.requestRescanForApiTokenInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Rescan request failed",
+        400,
+        rate.headers,
+      );
     }
   }
 

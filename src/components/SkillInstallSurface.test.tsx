@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillInstallSurface } from "./SkillInstallSurface";
+import { SkillCommandLineCard, SkillInstallSurface } from "./SkillInstallSurface";
 
 const writeTextMock = vi.fn();
 
@@ -57,7 +57,7 @@ describe("SkillInstallSurface", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Install with OpenClaw" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "CLI Commands" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "CLI Commands" })).toBeNull();
     expect(screen.getByText(/After install, inspect the skill metadata/i)).toBeTruthy();
     expect(screen.getAllByText("Install & Setup").length).toBeGreaterThan(0);
 
@@ -72,9 +72,9 @@ describe("SkillInstallSurface", () => {
     expect(screen.getAllByText("Install Only").length).toBeGreaterThan(0);
   });
 
-  it("switches the ClawHub command and copies the visible CLI command", async () => {
+  it("defaults to CLI install and can copy the compact prompt tab", async () => {
     render(
-      <SkillInstallSurface
+      <SkillCommandLineCard
         slug="weather"
         displayName="Weather"
         ownerHandle="steipete"
@@ -82,13 +82,32 @@ describe("SkillInstallSurface", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Use pnpm for ClawHub install command" }));
-    expect(screen.getByText("pnpm dlx clawhub@latest install weather")).toBeTruthy();
+    expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
+    expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
+    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe(
+      "false",
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy ClawHub CLI command" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw CLI command" }));
 
     await waitFor(() => {
-      expect(writeTextMock).toHaveBeenCalledWith("pnpm dlx clawhub@latest install weather");
+      expect(writeTextMock).toHaveBeenCalledWith("openclaw skills install weather");
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Prompt" }));
+
+    expect(screen.getByText(/Install the skill "Weather"/i)).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw prompt" }));
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        expect.stringContaining("After install, inspect the skill metadata"),
+      );
     });
   });
 });

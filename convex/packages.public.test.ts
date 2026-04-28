@@ -2614,6 +2614,15 @@ describe("packages public queries", () => {
                 })),
               };
             }
+            if (table === "rescanRequests") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn().mockResolvedValue([]),
+                  })),
+                })),
+              };
+            }
             throw new Error(`Unexpected table ${table}`);
           }),
         },

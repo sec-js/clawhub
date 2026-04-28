@@ -37,11 +37,13 @@ export function InstallCopyButton({
   label = "Copy",
   ariaLabel,
   className,
+  showLabel = true,
 }: {
   text: string;
   label?: string;
   ariaLabel?: string;
   className?: string;
+  showLabel?: boolean;
 }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const resetTimeoutRef = useRef<number | null>(null);
@@ -94,7 +96,7 @@ export function InstallCopyButton({
       ) : (
         <Copy className="h-3.5 w-3.5" aria-hidden="true" />
       )}
-      <span aria-live="polite">{buttonLabel}</span>
+      {showLabel ? <span aria-live="polite">{buttonLabel}</span> : null}
     </Button>
   );
 }

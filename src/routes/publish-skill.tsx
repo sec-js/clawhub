@@ -349,7 +349,7 @@ export function Upload() {
             title={`Sign in to publish a ${contentLabel}`}
             description="You need to be signed in to publish skills on ClawHub."
           >
-            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+            <SignInButton />
           </EmptyState>
         </Container>
       </main>

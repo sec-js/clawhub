@@ -134,6 +134,7 @@ export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variant
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        role?: "user" | "admin" | "moderator" | null | undefined;
     };
 }, {}>;
 export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

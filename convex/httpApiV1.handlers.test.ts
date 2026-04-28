@@ -2114,6 +2114,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.user.handle).toBe("p");
+    expect(json.user.role).toBeNull();
   });
 
   it("delete and undelete require auth", async () => {
@@ -2160,6 +2161,86 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     expect(response2.status).toBe(200);
+  });
+
+  it("skill rescan routes authenticated owners to the rescan mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        targetKind: "skill",
+        name: args.slug,
+        version: "1.2.3",
+        status: "in_progress",
+        remainingRequests: 2,
+        maxRequests: 3,
+        pendingRequestId: "rescanRequests:1",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      targetKind: "skill",
+      name: "demo",
+      remainingRequests: 2,
+      maxRequests: 3,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorUserId: "users:1", slug: "demo" }),
+    );
+  });
+
+  it("package rescan routes authenticated owners to the rescan mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        targetKind: "package",
+        name: args.name,
+        version: "1.2.3",
+        status: "in_progress",
+        remainingRequests: 2,
+        maxRequests: 3,
+        pendingRequestId: "rescanRequests:1",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      targetKind: "package",
+      name: "@scope/demo",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorUserId: "users:1", name: "@scope/demo" }),
+    );
   });
 
   it("transfer request requires auth", async () => {

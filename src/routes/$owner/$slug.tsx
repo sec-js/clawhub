@@ -1,4 +1,10 @@
-import { createFileRoute, notFound, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  notFound,
+  Outlet,
+  redirect,
+  useRouterState,
+} from "@tanstack/react-router";
 import { SkillDetailPage } from "../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../lib/og";
 import { fetchSkillPageData } from "../../lib/skillPage";
@@ -73,7 +79,10 @@ function OwnerSkill() {
   const { owner, slug } = Route.useParams();
   const { initialData } = Route.useLoaderData();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  if (pathname.includes(`/${encodeURIComponent(slug)}/security/`)) {
+  if (
+    pathname.includes(`/${encodeURIComponent(slug)}/security/`) ||
+    pathname.endsWith(`/${encodeURIComponent(slug)}/settings`)
+  ) {
     return <Outlet />;
   }
   return <SkillDetailPage slug={slug} canonicalOwner={owner} initialData={initialData} />;

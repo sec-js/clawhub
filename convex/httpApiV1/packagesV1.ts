@@ -62,6 +62,7 @@ const internalRefs = internal as unknown as {
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
     insertAuditLogInternal: unknown;
+    requestRescanForApiTokenInternal: unknown;
     softDeletePackageInternal: unknown;
   };
   packagePublishTokens: {
@@ -823,6 +824,31 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[1] === "rescan" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.requestRescanForApiTokenInternal,
+        {
+          actorUserId: auth.userId,
+          name: segments[0]!,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Rescan request failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
     return text("Not found", 404);
   }

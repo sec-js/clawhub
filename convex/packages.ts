@@ -11,7 +11,14 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./functions";
 import {
   assertAdmin,
   assertModerator,
@@ -48,10 +55,7 @@ import {
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
-import {
-  getLatestPackageRescanTarget,
-  insertPackageRescanRequest,
-} from "./model/packages/rescans";
+import { getLatestPackageRescanTarget, insertPackageRescanRequest } from "./model/packages/rescans";
 import {
   assertCanRequestRescan,
   buildRescanState,
@@ -264,6 +268,7 @@ type DashboardPackageListItem = {
   createdAt: number;
   updatedAt: number;
   pendingReview?: true;
+  rescanState: Awaited<ReturnType<typeof buildRescanState>> | null;
   latestRelease: {
     version: string;
     createdAt: number;
@@ -434,6 +439,13 @@ async function toDashboardPackageListItem(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     pendingReview: pkg.scanStatus === "pending" ? true : undefined,
+    rescanState:
+      latestRelease && !latestRelease.softDeletedAt
+        ? await buildRescanState(ctx, {
+            kind: "plugin",
+            artifactId: latestRelease._id,
+          })
+        : null,
     latestRelease:
       latestRelease && !latestRelease.softDeletedAt
         ? {
@@ -2226,7 +2238,9 @@ export const insertReleaseInternal = internalMutation({
         .withIndex("by_runtime_id", (q) => q.eq("runtimeId", args.runtimeId))
         .unique();
       if (runtimeCollision && runtimeCollision._id !== existing?._id) {
-        throw new ConvexError(`Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`);
+        throw new ConvexError(
+          `Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`,
+        );
       }
     }
 
@@ -2664,11 +2678,14 @@ async function markPackageRescanRequest(
   status: "completed" | "failed",
   error?: string,
 ) {
-  await ctx.runMutation(internalRefs.rescanRequests.markStatusInternal as never, {
-    requestId,
-    status,
-    error,
-  } as never);
+  await ctx.runMutation(
+    internalRefs.rescanRequests.markStatusInternal as never,
+    {
+      requestId,
+      status,
+      error,
+    } as never,
+  );
 }
 
 export const getRescanState = query({
@@ -2691,6 +2708,39 @@ export const getRescanState = query({
       ...(await buildRescanState(ctx, {
         kind: "plugin",
         artifactId: target.release._id,
+      })),
+    };
+  },
+});
+
+export const getOwnerRescanStateByName = query({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    if (!viewerUserId) return null;
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) return null;
+
+    const release = await ctx.db.get(pkg.latestReleaseId);
+    if (!release || release.softDeletedAt) return null;
+
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) return null;
+    if (actor.role !== "admin") {
+      const canAccess = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
+      if (!canAccess) return null;
+    }
+
+    return {
+      targetKind: "plugin" as const,
+      targetVersion: release.version,
+      packageReleaseId: release._id,
+      ...(await buildRescanState(ctx, {
+        kind: "plugin",
+        artifactId: release._id,
       })),
     };
   },
@@ -2726,6 +2776,55 @@ export const requestRescan = mutation({
         kind: "plugin",
         artifactId: target.release._id,
       })),
+    };
+  },
+});
+
+export const requestRescanForApiTokenInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Plugin not found");
+    }
+
+    const target = await getLatestPackageRescanTarget(ctx, pkg._id);
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: target.pkg.ownerUserId,
+      ownerPublisherId: target.pkg.ownerPublisherId,
+      allowPlatformAdmin: true,
+    });
+    await assertCanRequestRescan(ctx, {
+      kind: "plugin",
+      artifactId: target.release._id,
+    });
+
+    const requestId = await insertPackageRescanRequest(ctx, actor, target);
+    await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
+      requestId,
+      releaseId: target.release._id,
+    });
+
+    const state = await buildRescanState(ctx, {
+      kind: "plugin",
+      artifactId: target.release._id,
+    });
+    return {
+      ok: true,
+      targetKind: "package" as const,
+      name: target.pkg.normalizedName,
+      version: target.release.version,
+      status: state.inProgressRequest?.status ?? state.latestRequest?.status ?? "in_progress",
+      remainingRequests: state.remainingRequests,
+      maxRequests: state.maxRequests,
+      pendingRequestId: requestId,
     };
   },
 });

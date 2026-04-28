@@ -78,6 +78,8 @@ describe("devSeed rescan UX fixtures", () => {
       flaggedSkillMd: "# Flagged skill",
       flaggedPluginStorageId: "storage:plugin",
       flaggedPluginReadme: "# Flagged plugin",
+      scannedPluginStorageId: "storage:scanned-plugin",
+      scannedPluginReadme: "# Scanned plugin",
     };
 
     await seedRescanUxFixturesHandler({ db } as never, args as never);
@@ -96,12 +98,34 @@ describe("devSeed rescan UX fixtures", () => {
         moderationVerdict: "malicious",
       }),
     );
-    expect(tables.packages).toHaveLength(1);
-    expect(tables.packages?.[0]).toEqual(
+    expect(tables.packages).toHaveLength(2);
+    expect(tables.packages?.find((pkg) => pkg.name === "local-flagged-runtime-plugin")).toEqual(
       expect.objectContaining({
         ownerUserId: tables.users?.[0]?._id,
         ownerPublisherId: tables.publishers?.[0]?._id,
         scanStatus: "malicious",
+      }),
+    );
+    expect(tables.packages?.find((pkg) => pkg.name === "local-scanned-runtime-plugin")).toEqual(
+      expect.objectContaining({
+        ownerUserId: tables.users?.[0]?._id,
+        ownerPublisherId: tables.publishers?.[0]?._id,
+        scanStatus: "suspicious",
+      }),
+    );
+
+    const scannedPackage = tables.packages?.find(
+      (pkg) => pkg.name === "local-scanned-runtime-plugin",
+    );
+    const scannedRelease = tables.packageReleases?.find(
+      (release) => release.packageId === scannedPackage?._id,
+    );
+    expect(scannedRelease).toEqual(
+      expect.objectContaining({
+        sha256hash: "seeded-scanned-plugin-hash",
+        vtAnalysis: expect.objectContaining({ status: "clean" }),
+        llmAnalysis: expect.objectContaining({ status: "suspicious" }),
+        staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
     );
 

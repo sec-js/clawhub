@@ -1,17 +1,11 @@
-import { useQuery } from "convex/react";
-import { AlertTriangle, ArrowLeft, Clock, ExternalLink, Fingerprint, RotateCw } from "lucide-react";
+import { ArrowLeft, Clock, ExternalLink, Fingerprint } from "lucide-react";
 import type { ReactNode } from "react";
-import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { isModerator } from "../lib/roles";
-import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   getScanStatusInfo,
   type LlmAnalysis,
-  OpenClawIcon,
   type StaticFinding,
   type VtAnalysis,
-  VirusTotalIcon,
 } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -33,7 +27,6 @@ type EntityRef = {
   ownerUserId?: Id<"users"> | null;
   ownerPublisherId?: Id<"publishers"> | null;
   detailPath: string;
-  securityBasePath: string;
 };
 
 type SecurityScannerPageProps = {
@@ -55,21 +48,15 @@ type SecurityScannerPageProps = {
 
 const SCANNER_LABELS: Record<ScannerSlug, string> = {
   virustotal: "VirusTotal",
-  openclaw: "OpenClaw",
+  openclaw: "ClawScan",
   "static-analysis": "Static analysis",
 };
 
 const SCANNER_SUMMARIES: Record<ScannerSlug, string> = {
   virustotal: "External malware reputation and Code Insight signals for this exact artifact hash.",
-  openclaw: "OpenClaw's context-aware review of the artifact, metadata, and declared behavior.",
+  openclaw: "ClawHub's context-aware review of the artifact, metadata, and declared behavior.",
   "static-analysis": "Deterministic local checks for risky code patterns and metadata mismatches.",
 };
-
-function ScannerIcon({ scanner, className }: { scanner: ScannerSlug; className?: string }) {
-  if (scanner === "virustotal") return <VirusTotalIcon className={className} />;
-  if (scanner === "openclaw") return <OpenClawIcon className={className} />;
-  return <AlertTriangle className={className} aria-hidden="true" />;
-}
 
 function formatTime(value?: number | null) {
   if (!value) return "Not checked yet";
@@ -109,81 +96,6 @@ function getCheckedAt(props: SecurityScannerPageProps) {
   return props.staticScan?.checkedAt ?? null;
 }
 
-function RescanPanel({ entity }: { entity: EntityRef }) {
-  const { me, isAuthenticated } = useAuthStatus();
-  const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
-    | undefined;
-  const publisherIds = new Set((publisherMemberships ?? []).map((entry) => entry.publisher._id));
-  const isOwner =
-    Boolean(me && entity.ownerUserId && me._id === entity.ownerUserId) ||
-    Boolean(entity.ownerPublisherId && publisherIds.has(entity.ownerPublisherId)) ||
-    isModerator(me);
-
-  if (!isAuthenticated || !isOwner) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Rescan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="m-0 text-sm text-[color:var(--ink-soft)]">
-            Owners can request a fresh scan for the latest {entity.kind === "skill" ? "version" : "release"}.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Owner Rescan</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3">
-          <div className="text-sm text-[color:var(--ink)]">
-            Rescan controls will submit against the latest {entity.kind === "skill" ? "version" : "release"}.
-          </div>
-          <div className="text-xs text-[color:var(--ink-soft)]">
-            Request counts are capped by the backend per published artifact. This branch does not expose the
-            rescan mutation yet, so the action is shown disabled instead of pretending it can schedule work.
-          </div>
-          <Button type="button" variant="outline" size="sm" disabled className="w-full sm:w-fit">
-            <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
-            Request rescan
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ScannerTabs({ entity, active }: { entity: EntityRef; active: ScannerSlug }) {
-  const scanners: ScannerSlug[] = ["virustotal", "openclaw", "static-analysis"];
-  return (
-    <nav className="flex flex-wrap gap-2" aria-label="Security scanners">
-      {scanners.map((scanner) => {
-        const isActive = scanner === active;
-        return (
-          <a
-            key={scanner}
-            href={`${entity.securityBasePath}/${scanner}`}
-            className={`inline-flex min-h-[34px] items-center gap-2 rounded-[var(--r-btn)] border px-3 py-1.5 text-xs font-semibold no-underline ${
-              isActive
-                ? "border-[color:var(--accent)] bg-[color:var(--active-bg)] text-[color:var(--ink)]"
-                : "border-[color:var(--line)] text-[color:var(--ink-soft)] hover:bg-[color:var(--surface-muted)]"
-            }`}
-          >
-            <ScannerIcon scanner={scanner} className="h-3.5 w-3.5" />
-            {SCANNER_LABELS[scanner]}
-          </a>
-        );
-      })}
-    </nav>
-  );
-}
-
 export function SecurityScannerPage(props: SecurityScannerPageProps) {
   const label = SCANNER_LABELS[props.scanner];
   const status = getScannerStatus(props);
@@ -203,7 +115,7 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
               Back to {props.entity.kind}
             </a>
           </Button>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3">
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge>{props.entity.kind === "skill" ? "Skill" : "Plugin"}</Badge>
@@ -216,18 +128,14 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                 {props.entity.title} · {SCANNER_SUMMARIES[props.scanner]}
               </p>
             </div>
-            <ScannerTabs entity={props.entity} active={props.scanner} />
           </div>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="security-scanner-layout">
           <div className="flex min-w-0 flex-col gap-5">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ScannerIcon scanner={props.scanner} className="h-5 w-5" />
-                  Scanner verdict
-                </CardTitle>
+                <CardTitle>Scanner verdict</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap items-center gap-2">
@@ -278,7 +186,7 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                       <DetailRow label="Verdict">{props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "Pending"}</DetailRow>
                       <DetailRow label="Confidence">{props.llmAnalysis?.confidence ?? "Not reported"}</DetailRow>
                       <DetailRow label="Model">{props.llmAnalysis?.model ?? "Not reported"}</DetailRow>
-                      <DetailRow label="Summary">{props.llmAnalysis?.summary ?? "No OpenClaw analysis has been recorded yet."}</DetailRow>
+                      <DetailRow label="Summary">{props.llmAnalysis?.summary ?? "No ClawScan analysis has been recorded yet."}</DetailRow>
                       <DetailRow label="Guidance">{props.llmAnalysis?.guidance ?? null}</DetailRow>
                       <DetailRow label="Findings">
                         {props.llmAnalysis?.findings ? (
@@ -375,7 +283,6 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
           </div>
 
           <aside className="flex min-w-0 flex-col gap-5">
-            <RescanPanel entity={props.entity} />
             <Card>
               <CardHeader>
                 <CardTitle>Artifact</CardTitle>

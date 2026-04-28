@@ -7,24 +7,25 @@ const buttonVariants = cva(
   [
     "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-200 ease-out",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]",
-    "disabled:pointer-events-none disabled:opacity-60",
+    "cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-60",
+    "!no-underline hover:!no-underline",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0",
   ],
   {
     variants: {
       variant: {
         default:
-          "border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] hover:not-disabled:-translate-y-px hover:not-disabled:shadow-hover",
+          "border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] hover:not-disabled:bg-[color:var(--surface-muted)]",
         primary:
-          "border border-accent bg-accent/10 text-[color:var(--ink)] hover:not-disabled:-translate-y-px hover:not-disabled:shadow-hover",
+          "border border-[color:var(--border-ui)] bg-[color:var(--surface-muted)] text-[color:var(--ink)] hover:not-disabled:bg-[color:var(--hover-bg)]",
         secondary:
-          "border border-[color:var(--line)] bg-[color:var(--surface-muted)] text-[color:var(--ink)] hover:not-disabled:-translate-y-px hover:not-disabled:shadow-hover",
+          "border border-[color:var(--line)] bg-[color:var(--surface-muted)] text-[color:var(--ink)] hover:not-disabled:bg-[color:var(--hover-bg)]",
         destructive:
-          "border border-status-error-fg/20 bg-status-error-bg text-status-error-fg hover:not-disabled:-translate-y-px hover:not-disabled:bg-active-bg hover:not-disabled:shadow-hover",
+          "border border-status-error-fg/20 bg-status-error-bg text-status-error-fg hover:not-disabled:bg-active-bg",
         ghost:
           "border border-transparent bg-transparent text-[color:var(--ink-soft)] hover:not-disabled:bg-[color:var(--surface-muted)] hover:not-disabled:text-[color:var(--ink)]",
         outline:
-          "border border-[color:var(--border-ui)] bg-transparent text-[color:var(--ink)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:var(--border-ui-hover)] hover:not-disabled:bg-[color:var(--surface)] hover:not-disabled:shadow-hover",
+          "border border-[color:var(--border-ui)] bg-transparent text-[color:var(--ink)] hover:not-disabled:border-[color:var(--border-ui-hover)] hover:not-disabled:bg-[color:var(--surface)]",
         link: "h-auto border border-transparent bg-transparent p-0 text-[color:var(--accent-deep)] underline-offset-4 hover:underline disabled:opacity-60",
       },
       size: {

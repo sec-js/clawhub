@@ -1,3 +1,4 @@
+import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "./ui/badge";
 
@@ -77,33 +78,8 @@ export function VirusTotalIcon({ className }: { className?: string }) {
   );
 }
 
-export function OpenClawIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="1em"
-      height="1em"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-label="OpenClaw"
-    >
-      <title>OpenClaw</title>
-      <path
-        d="M12 2C8.5 2 5.5 4 4 7c-2 4-1 8 2 11 1.5 1.5 3.5 2.5 6 2.5s4.5-1 6-2.5c3-3 4-7 2-11-1.5-3-4.5-5-8-5z"
-        fill="currentColor"
-        opacity="0.2"
-      />
-      <path
-        d="M9 8c1-2 3-3 5-2s3 3 2 5l-3 4-2-1 3-4c.5-1 0-2-1-2.5S11 7 10.5 8L8 12l-2-1 3-4z"
-        fill="currentColor"
-      />
-      <path
-        d="M15 8c-1-2-3-3-5-2s-3 3-2 5l3 4 2-1-3-4c-.5-1 0-2 1-2.5S14 7 14.5 8L17 12l2-1-4-3z"
-        fill="currentColor"
-        opacity="0.6"
-      />
-    </svg>
-  );
+export function ClawScanIcon({ className }: { className?: string }) {
+  return <ShieldCheck className={className} aria-label="ClawScan" />;
 }
 
 export function getScanStatusInfo(status: string) {
@@ -251,7 +227,7 @@ function getStaticGuidance(findings: StaticFinding[], vtStatus?: string, llmStat
     return {
       className: "benign",
       label: "Confirmed safe by external scanners",
-      text: "Static analysis detected API credential-access patterns, but both VirusTotal and OpenClaw confirmed this skill is safe. These patterns are common in legitimate API integration skills.",
+      text: "Static analysis detected API credential-access patterns, but both VirusTotal and ClawScan confirmed this skill is safe. These patterns are common in legitimate API integration skills.",
     };
   }
   const hasCritical = findings.some((f) => f.severity === "critical");
@@ -259,13 +235,13 @@ function getStaticGuidance(findings: StaticFinding[], vtStatus?: string, llmStat
     return {
       className: "suspicious",
       label: "Patterns worth reviewing",
-      text: "These patterns may indicate risky behavior. Check the VirusTotal and OpenClaw results above for context-aware analysis before installing.",
+      text: "These patterns may indicate risky behavior. Check the VirusTotal and ClawScan results above for context-aware analysis before installing.",
     };
   }
   return {
     className: "benign",
     label: "About static analysis",
-    text: "These patterns were detected by automated regex scanning. They may be normal for skills that integrate with external APIs. Check the VirusTotal and OpenClaw results above for context-aware analysis.",
+    text: "These patterns were detected by automated regex scanning. They may be normal for skills that integrate with external APIs. Check the VirusTotal and ClawScan results above for context-aware analysis.",
   };
 }
 
@@ -384,7 +360,7 @@ export function SecurityScanResults({
         ) : null}
         {llmStatusInfo ? (
           <div className="version-scan-badge">
-            <OpenClawIcon className="version-scan-icon version-scan-icon-oc" />
+            <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
             <span className={llmStatusInfo.className}>{llmStatusInfo.label}</span>
             {scannerBasePath ? (
               <a
@@ -456,8 +432,8 @@ export function SecurityScanResults({
         {llmStatusInfo && llmAnalysis ? (
           <div className="scan-result-row">
             <div className="scan-result-scanner">
-              <OpenClawIcon className="scan-result-icon scan-result-icon-oc" />
-              <span className="scan-result-scanner-name">OpenClaw</span>
+              <ClawScanIcon className="scan-result-icon scan-result-icon-oc" />
+              <span className="scan-result-scanner-name">ClawScan</span>
             </div>
             <div className={`scan-result-status ${llmStatusInfo.className}`}>
               {llmStatusInfo.label}

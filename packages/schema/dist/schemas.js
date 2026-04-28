@@ -110,6 +110,7 @@ export const ApiV1WhoamiResponseSchema = type({
         handle: "string|null",
         displayName: "string|null?",
         image: "string|null?",
+        role: '"admin"|"moderator"|"user"|null?',
     },
 });
 export const ApiV1UserSearchResponseSchema = type({
