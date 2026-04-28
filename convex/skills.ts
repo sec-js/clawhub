@@ -207,6 +207,9 @@ function resolveScannerModerationReason(params: {
   const vtStatus = normalizeAnalysisStatus(params.vtStatus);
   const llmStatus = normalizeAnalysisStatus(params.llmStatus);
 
+  if (params.verdict === "clean" && (vtStatus === "suspicious" || llmStatus === "suspicious")) {
+    return "scanner.aggregate.clean";
+  }
   if (vtStatus === "malicious") return "scanner.vt.malicious";
   if (llmStatus === "malicious") return "scanner.llm.malicious";
   if (vtStatus === "suspicious") return "scanner.vt.suspicious";
@@ -4855,11 +4858,21 @@ export const escalateByVtInternal = internalMutation({
       basePatch.moderationReason = normalizeScannerSuspiciousReason(
         skill.moderationReason as string | undefined,
       );
+    } else if (nextVerdict === "clean" && !alreadyBlocked) {
+      const existingReason = skill.moderationReason as string | undefined;
+      if (existingReason?.startsWith("scanner.") && existingReason.endsWith(".suspicious")) {
+        basePatch.moderationReason = normalizeScannerSuspiciousReason(existingReason);
+      }
     }
 
     // Only hide for malicious — suspicious stays visible with a flag
     if (isMalicious) {
       basePatch.moderationStatus = "hidden";
+    } else if (nextVerdict === "clean" && !alreadyBlocked) {
+      basePatch.moderationStatus = "active";
+      basePatch.hiddenAt = undefined;
+      basePatch.hiddenBy = undefined;
+      basePatch.lastReviewedAt = undefined;
     }
 
     basePatch.isSuspicious = computeIsSuspicious({

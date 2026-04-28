@@ -426,4 +426,66 @@ describe("skills manual overrides", () => {
       }),
     );
   });
+
+  it("clears legacy suspicious state when LLM corroborates clean VT Code Insight-only suspicious", async () => {
+    const now = 1_700_000_400_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:9",
+      softDeletedAt: undefined,
+      moderationStatus: "hidden",
+      moderationReason: "scanner.vt.suspicious",
+      moderationVerdict: "suspicious",
+      moderationFlags: ["flagged.suspicious"],
+    };
+    const version = {
+      _id: "skillVersions:9",
+      skillId: "skills:1",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: now - 200,
+      },
+      vtAnalysis: {
+        status: "suspicious",
+        scanner: "code_insight",
+        engineStats: {
+          malicious: 0,
+          suspicious: 0,
+          harmless: 12,
+          undetected: 54,
+        },
+        checkedAt: now - 100,
+      },
+      llmAnalysis: undefined,
+    };
+
+    const { ctx, patch } = makeCtx({ skill, version });
+
+    await updateVersionLlmAnalysisInternalHandler(ctx, {
+      versionId: "skillVersions:9",
+      llmAnalysis: {
+        status: "clean",
+        checkedAt: now,
+      },
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationReason: "scanner.aggregate.clean",
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
+        isSuspicious: false,
+      }),
+    );
+  });
 });

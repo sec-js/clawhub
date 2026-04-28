@@ -1266,6 +1266,92 @@ describe("skills anti-spam guards", () => {
     );
   });
 
+  it("vt suspicious escalation clears legacy quarantine for uncorroborated Code Insight", async () => {
+    const patch = vi.fn(async () => {});
+    const version = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtAnalysis: {
+        status: "suspicious",
+        scanner: "code_insight",
+        engineStats: {
+          malicious: 0,
+          suspicious: 0,
+          harmless: 12,
+          undetected: 54,
+        },
+      },
+      llmAnalysis: { status: "clean" },
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "doc-only",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:1",
+      moderationStatus: "hidden",
+      moderationFlags: ["flagged.suspicious"],
+      moderationReason: "scanner.vt.suspicious",
+    };
+    const owner = {
+      _id: "users:owner",
+      role: "user",
+      deletedAt: undefined,
+    };
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skills:1") return skill;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        const digestQuery = buildDigestQuery(table);
+        if (digestQuery) return digestQuery;
+        if (table === "skillVersions") {
+          return {
+            withIndex: () => ({
+              unique: async () => version,
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    await escalateByVtHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      {
+        sha256hash: "h".repeat(64),
+        status: "suspicious",
+      } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationFlags: undefined,
+        moderationReason: "scanner.vt.clean",
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
+        isSuspicious: false,
+      }),
+    );
+  });
+
   it("ignores vt escalation for non-latest versions", async () => {
     const patch = vi.fn(async () => {});
     const version = {
