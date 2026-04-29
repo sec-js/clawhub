@@ -1112,9 +1112,18 @@ export const getByNameForStaff = query({
       .query("packageBadges")
       .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
       .unique();
+    const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+    const owner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: pkg.ownerPublisherId,
+        ownerUserId: pkg.ownerUserId,
+      }),
+    );
 
     return {
       package: pkg,
+      latestRelease: latestRelease && !latestRelease.softDeletedAt ? latestRelease : null,
+      owner,
       highlighted: highlighted
         ? {
             byUserId: highlighted.byUserId,

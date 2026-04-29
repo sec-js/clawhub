@@ -26,7 +26,6 @@ import {
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
-import { isModerator } from "../../lib/roles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -185,14 +184,8 @@ function PluginDetailRoute() {
   const { name } = Route.useParams();
   const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const { isAuthenticated, me } = useAuthStatus();
-  const staff = isModerator(me);
-  const setPackageBatch = useMutation(api.packages.setBatch);
+  const { isAuthenticated } = useAuthStatus();
   const requestPluginRescan = useMutation(api.packages.requestRescan);
-  const staffPackage = useQuery(
-    api.packages.getByNameForStaff,
-    staff && detail.package ? { name: detail.package.name } : "skip",
-  ) as { package: { _id: Id<"packages"> }; highlighted: { at: number } | null } | null | undefined;
   const rescanState = useQuery(
     api.packages.getOwnerRescanStateByName,
     isAuthenticated && detail.package ? { name: detail.package.name } : "skip",
@@ -249,21 +242,6 @@ function PluginDetailRoute() {
       : pkg.family === "bundle-plugin"
         ? `openclaw bundles install clawhub:${pkg.name}`
         : `openclaw skills install ${pkg.name}`;
-  const isHighlighted = Boolean(staffPackage?.highlighted);
-
-  const toggleHighlighted = async () => {
-    const packageId = staffPackage?.package._id;
-    if (!packageId) return;
-    try {
-      await setPackageBatch({
-        packageId,
-        batch: isHighlighted ? undefined : "highlighted",
-      });
-      toast.success(isHighlighted ? "Plugin unhighlighted." : "Plugin highlighted.");
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not update plugin highlight."));
-    }
-  };
 
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
@@ -324,13 +302,6 @@ function PluginDetailRoute() {
                 {isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Badge variant="destructive">Download blocked</Badge>
-                  </div>
-                ) : null}
-                {staffPackage ? (
-                  <div className="skill-title-actions">
-                    <Button variant="outline" size="sm" onClick={() => void toggleHighlighted()}>
-                      {isHighlighted ? "Unhighlight" : "Highlight"}
-                    </Button>
                   </div>
                 ) : null}
               </div>
