@@ -34,7 +34,6 @@ import {
 } from "./lib/githubIdentity";
 import {
   adjustGlobalPublicSkillsCount,
-  countPublicSkillsForGlobalStats,
   getPublicSkillVisibilityDelta,
   isPublicSkillDoc,
   readGlobalPublicSkillsCount,
@@ -3423,9 +3422,7 @@ export const countPublicSkills = query({
   args: {},
   handler: async (ctx) => {
     const statsCount = await readGlobalPublicSkillsCount(ctx);
-    if (typeof statsCount === "number") return statsCount;
-    // Fallback for uninitialized/missing globalStats storage.
-    return countPublicSkillsForGlobalStats(ctx);
+    return statsCount ?? 0;
   },
 });
 
