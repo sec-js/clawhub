@@ -33,6 +33,7 @@ function isMissingTableError(error: unknown, table: string) {
 
 type PackageDigestSyncCtx = Pick<MutationCtx, "db">;
 type OwnerPublisherDigestScheduleCtx = Pick<Partial<MutationCtx>, "scheduler">;
+type GitHubBackupDeletionCtx = Pick<MutationCtx, "db" | "scheduler">;
 type LatestPackageRelease = Pick<
   Doc<"packageReleases">,
   | "_id"
@@ -213,6 +214,35 @@ async function syncSkillSearchDigestForSkill(
   });
 }
 
+export function isGitHubMirrorEligibleSkillDoc(
+  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus"> | null | undefined,
+) {
+  if (!skill || skill.softDeletedAt) return false;
+  return (
+    skill.moderationStatus === undefined ||
+    skill.moderationStatus === null ||
+    skill.moderationStatus === "active"
+  );
+}
+
+export async function scheduleGitHubBackupDeletionForSkill(
+  ctx: GitHubBackupDeletionCtx,
+  skill: Pick<
+    Doc<"skills">,
+    "slug" | "ownerPublisherId" | "ownerUserId" | "softDeletedAt" | "moderationStatus"
+  >,
+) {
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  const ownerHandle = owner?.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId);
+  await ctx.scheduler.runAfter(0, internal.githubBackupsNode.deleteGitHubBackupForSlugInternal, {
+    ownerHandle,
+    slug: skill.slug,
+  });
+}
+
 export async function syncSkillSearchDigestsForOwnerPublisherId(
   ctx: PackageDigestSyncCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
@@ -324,12 +354,20 @@ export async function repointPackageLatestRelease(
 
 triggers.register("skills", async (ctx, change) => {
   if (change.operation === "delete") {
+    await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
     const existing = await ctx.db
       .query("skillSearchDigest")
       .withIndex("by_skill", (q) => q.eq("skillId", change.id))
       .unique();
     if (existing) await ctx.db.delete(existing._id);
   } else {
+    if (
+      change.operation === "update" &&
+      isGitHubMirrorEligibleSkillDoc(change.oldDoc) &&
+      !isGitHubMirrorEligibleSkillDoc(change.newDoc)
+    ) {
+      await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
+    }
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }
 });
