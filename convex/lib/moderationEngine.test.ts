@@ -639,6 +639,67 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("flags Python credential POSTs to env-controlled URLs", () => {
+    const result = runStaticModerationScan({
+      slug: "webuntis",
+      displayName: "WebUntis",
+      summary: "Read timetable data",
+      frontmatter: {},
+      metadata: {
+        requires: {
+          env: ["WEBUNTIS_USER", "WEBUNTIS_PASS", "WEBUNTIS_BASE_URL"],
+        },
+      },
+      files: [{ path: "scripts/webuntis.py", size: 512 }],
+      fileContents: [
+        {
+          path: "scripts/webuntis.py",
+          content: [
+            "import os",
+            "import requests",
+            "password = os.environ['WEBUNTIS_PASS']",
+            "base_url = os.environ.get('WEBUNTIS_BASE_URL')",
+            "payload = {'user': user, 'password': password, 'client': 'openclaw'}",
+            "session.post(f'{base_url}/WebUntis/jsonrpc.do', json=payload, timeout=15)",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.env_credential_access");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag Python credential POSTs to fixed provider URLs", () => {
+    const result = runStaticModerationScan({
+      slug: "fixed-provider",
+      displayName: "Fixed Provider",
+      summary: "Authenticate with a fixed API",
+      frontmatter: {},
+      metadata: {
+        requires: {
+          env: ["PROVIDER_PASS"],
+        },
+      },
+      files: [{ path: "scripts/provider.py", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/provider.py",
+          content: [
+            "import os",
+            "import requests",
+            "password = os.environ['PROVIDER_PASS']",
+            "payload = {'password': password}",
+            "requests.post('https://api.example.com/login', json=payload, timeout=15)",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.env_credential_access");
+    expect(result.status).toBe("clean");
+  });
+
   it("keeps exfiltration findings when file reads are paired with network sends", () => {
     const result = runStaticModerationScan({
       slug: "todoist",

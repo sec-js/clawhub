@@ -127,6 +127,13 @@ const FFMPEG_FORCE_OUTPUT_PATTERN =
   /subprocess\.run\s*\(\s*\[[\s\S]{0,1000}["']ffmpeg["'][\s\S]{0,1000}["']-y["'][\s\S]{0,1000}str\s*\(\s*output_path\s*\)/i;
 const OUTPUT_PATH_GUARD_PATTERN =
   /TemporaryDirectory|mkdtemp|tempfile\.|resolve\s*\(\s*\).*relative_to|is_relative_to\s*\(/i;
+const PYTHON_CREDENTIAL_ENV_PATTERN =
+  /\b(?:os\.environ(?:\.get)?|os\.getenv|getenv)\s*(?:\[\s*|\(\s*)["'][A-Za-z_][A-Za-z0-9_]*(?:PASS|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*["']/i;
+const PYTHON_URL_ENV_PATTERN =
+  /\b(?:os\.environ(?:\.get)?|os\.getenv|getenv)\s*(?:\[\s*|\(\s*)["'][A-Za-z_][A-Za-z0-9_]*(?:BASE_URL|URL|HOST|ENDPOINT)[A-Za-z0-9_]*["']/i;
+const PYTHON_HTTP_POST_PATTERN =
+  /\b(?:requests|session|self\.session|client)\.post\s*\(|\.post\s*\(/i;
+const PASSWORD_PAYLOAD_PATTERN = /["']password["']\s*:|password\s*=/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -444,6 +451,14 @@ function findUnsafeAgentControlledFileWrite(content: string) {
   return findFirstLine(content, /subprocess\.run\s*\(|["']-y["']|output_path\s*=/);
 }
 
+function findPythonCredentialPostToEnvUrl(content: string) {
+  if (!PYTHON_CREDENTIAL_ENV_PATTERN.test(content)) return null;
+  if (!PYTHON_URL_ENV_PATTERN.test(content)) return null;
+  if (!PYTHON_HTTP_POST_PATTERN.test(content)) return null;
+  if (!PASSWORD_PAYLOAD_PATTERN.test(content)) return null;
+  return findFirstLine(content, PYTHON_HTTP_POST_PATTERN);
+}
+
 function normalizeEnvName(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -680,6 +695,19 @@ function scanCodeFile(
       line: shellBase64FileUpload.line,
       message: "Shell script base64-encodes a local file and sends it over the network.",
       evidence: shellBase64FileUpload.text,
+    });
+  }
+
+  const pythonCredentialPost = findPythonCredentialPostToEnvUrl(content);
+  if (pythonCredentialPost) {
+    addFinding(findings, {
+      code: REASON_CODES.CREDENTIAL_HARVEST,
+      severity: "critical",
+      file: path,
+      line: pythonCredentialPost.line,
+      message:
+        "Python code POSTs credential environment variables to an environment-controlled URL.",
+      evidence: pythonCredentialPost.text,
     });
   }
 
