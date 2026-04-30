@@ -139,9 +139,14 @@ function findHardcodedSecret(content: string) {
 function hasNearbyConfirmationGate(lines: string[], commandIndex: number) {
   const start = Math.max(0, commandIndex - 8);
   const context = lines.slice(start, commandIndex + 1).join("\n");
-  return /(?:ask|prompt|require|confirm|confirmation|approval|continue\?|yes\/no).{0,120}(?:user|before|delet|remov|rm\s+-rf)/is.test(
-    context,
-  );
+  return [
+    /\bask\s+(?:the\s+)?user\b.{0,120}\b(?:confirm|confirmation|approve|approval|continue|yes)\b/is,
+    /\b(?:prompt\s+for|require|request|obtain)\s+(?:explicit\s+)?(?:user\s+)?(?:confirmation|approval)\b/is,
+    /\buser\s+(?:confirmation|approval)\b/is,
+    /\bcontinue\?\s*\(?(?:yes\/no|y\/n)\)?/is,
+    /\breply\s+["']?yes["']?\b/is,
+    /\bonly\s+(?:continue\s+)?after\s+(?:the\s+)?user\b.{0,80}\b(?:confirms?|approves?|answers?\s+yes)\b/is,
+  ].some((pattern) => pattern.test(context));
 }
 
 function findUnguardedDestructiveDelete(content: string) {

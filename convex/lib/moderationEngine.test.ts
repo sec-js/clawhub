@@ -561,6 +561,33 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("does not treat loose confirm prose as a deletion gate", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Speech-to-text helper",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "Confirm the backup exists before proceeding.",
+            "```bash",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "/root/.openclaw/workspace/skills/stt-simple/install.sh",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
   it("does not flag ordinary project cleanup commands", () => {
     const result = runStaticModerationScan({
       slug: "build-helper",
