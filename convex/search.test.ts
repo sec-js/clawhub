@@ -148,16 +148,48 @@ describe("search helpers", () => {
     });
     const clean = makeSkillDoc({ id: "skills:clean", slug: "orf-clean", displayName: "ORF Clean" });
 
-    const result = await lexicalFallbackSkillsHandler(
-      makeLexicalCtx({
-        exactSlugSkill: null,
-        recentSkills: [suspicious, clean],
-      }),
-      { query: "orf", queryTokens: ["orf"], nonSuspiciousOnly: true, limit: 10 },
-    );
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [suspicious, clean],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "orf",
+      queryTokens: ["orf"],
+      nonSuspiciousOnly: true,
+      limit: 10,
+    });
 
     expect(result).toHaveLength(1);
     expect(result[0].skill.slug).toBe("orf-clean");
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_nonsuspicious_updated", "by_nonsuspicious_created"]),
+    );
+  });
+
+  it("preserves suspicious lexical fallback results when nonSuspiciousOnly is unset", async () => {
+    const clean = makeSkillDoc({ id: "skills:clean", slug: "orf-clean", displayName: "ORF Clean" });
+    const suspicious = makeSkillDoc({
+      id: "skills:suspicious",
+      slug: "orf-suspicious",
+      displayName: "ORF Suspicious",
+      moderationFlags: ["flagged.suspicious"],
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [clean, suspicious],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "orf",
+      queryTokens: ["orf"],
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["orf-clean", "orf-suspicious"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_updated", "by_active_created"]),
+    );
   });
 
   it("includes exact slug match from by_slug even when recent scan is empty", async () => {
@@ -1269,12 +1301,15 @@ function makeLexicalCtx(params: {
     }));
   const digestByUpdated = toDigestRows(params.recentSkills);
   const digestByCreated = toDigestRows(params.recentByCreated ?? []);
+  const usedIndexes: string[] = [];
   return {
+    usedIndexes,
     db: {
       query: vi.fn((table: string) => {
         if (table === "skills") {
           return {
             withIndex: (index: string) => {
+              usedIndexes.push(index);
               if (index === "by_slug") {
                 return {
                   unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
@@ -1287,14 +1322,15 @@ function makeLexicalCtx(params: {
         if (table === "skillSearchDigest") {
           return {
             withIndex: (index: string) => {
-              if (index === "by_active_updated") {
+              usedIndexes.push(index);
+              if (index === "by_active_updated" || index === "by_nonsuspicious_updated") {
                 return {
                   order: () => ({
                     take: vi.fn().mockResolvedValue(digestByUpdated),
                   }),
                 };
               }
-              if (index === "by_active_created") {
+              if (index === "by_active_created" || index === "by_nonsuspicious_created") {
                 return {
                   order: () => ({
                     take: vi.fn().mockResolvedValue(digestByCreated),

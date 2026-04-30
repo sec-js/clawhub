@@ -390,17 +390,28 @@ export const lexicalFallbackSkills = internalQuery({
     // Scan recent active digests (~800 bytes each) instead of full skill docs (~3-5KB).
     // Use updatedAt and createdAt windows so newly published skills are visible even
     // when they are not in the most recently updated slice.
+    const recentByUpdatedQuery = args.nonSuspiciousOnly
+      ? ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_nonsuspicious_updated", (q) =>
+            q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+          )
+      : ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined));
+    const recentByCreatedQuery = args.nonSuspiciousOnly
+      ? ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_nonsuspicious_created", (q) =>
+            q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+          )
+      : ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined));
+
     const [recentByUpdated, recentByCreated] = await Promise.all([
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .take(FALLBACK_SCAN_LIMIT),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .take(FALLBACK_SCAN_LIMIT),
+      recentByUpdatedQuery.order("desc").take(FALLBACK_SCAN_LIMIT),
+      recentByCreatedQuery.order("desc").take(FALLBACK_SCAN_LIMIT),
     ]);
 
     const addDigestCandidates = (digests: typeof recentByUpdated) => {
