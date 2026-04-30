@@ -70,6 +70,31 @@ function barnacleContext(pullRequest, labels = [], options = {}) {
   };
 }
 
+function barnacleIssueContext(issue, labels = [], options = {}) {
+  return {
+    repo: {
+      owner: "openclaw",
+      repo: "clawhub",
+    },
+    payload: {
+      action: options.action ?? "opened",
+      label: options.label,
+      sender: options.sender,
+      issue: {
+        number: 456,
+        title: "ClawHub issue",
+        body: "",
+        state: "open",
+        user: {
+          login: "reporter",
+        },
+        labels: labels.map((name) => ({ name })),
+        ...issue,
+      },
+    },
+  };
+}
+
 function barnacleGithub(files) {
   const calls = {
     addLabels: [],
@@ -186,6 +211,27 @@ describe("barnacle-auto-response", () => {
     ]);
 
     expect(labels).not.toContain(candidateLabels.directSkillContent);
+  });
+
+  it("ignores unchecked PR template checklist entries when classifying refactors", () => {
+    const body = [
+      "## Summary",
+      "- Adds GET /api/v1/stars and a list-stars CLI command.",
+      "",
+      "## Type of change",
+      "- [x] New feature",
+      "- [ ] Refactor",
+      "- [ ] Documentation",
+      "",
+      "## Test Plan",
+      "- bun run test",
+    ].join("\n");
+    const labels = classifyPullRequestCandidateLabels(pr("feat: add stars API", body), [
+      file("src/routes/api/v1/stars.ts"),
+      file("packages/clawhub/src/commands/list-stars.ts"),
+    ]);
+
+    expect(labels).not.toContain(candidateLabels.refactorOnly);
   });
 
   it("uses linked issues as context and suppresses low-signal docs labels", () => {
@@ -308,6 +354,110 @@ describe("barnacle-auto-response", () => {
         issue_number: 456,
         state: "closed",
         state_reason: "not_planned",
+      }),
+    );
+  });
+
+  it("routes direct skill submission issues through the publishing guidance rule", async () => {
+    const { calls, github } = barnacleGithub([]);
+
+    await runBarnacleAutoResponse({
+      github,
+      context: barnacleIssueContext({
+        title: "Awesome-Gaussian-Skills: Universal AI Agent Skill Pack",
+        body: [
+          "**Can this skill be added?**",
+          "",
+          "Project URL: https://github.com/example/awesome-gaussian-skills",
+          "",
+          "Please give it a try and star the repo.",
+        ].join("\n"),
+      }),
+      core: {
+        info: () => undefined,
+      },
+    });
+
+    expect(calls.addLabels).toContainEqual(
+      expect.objectContaining({
+        labels: expect.arrayContaining(["r: direct-skill-content"]),
+      }),
+    );
+    expect(calls.createComment).toContainEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("published through ClawHub"),
+      }),
+    );
+    expect(calls.update).toContainEqual(expect.objectContaining({ state: "closed" }));
+  });
+
+  it("labels rescan review requests for the dedicated rescan guidance workflow", async () => {
+    const { calls, github } = barnacleGithub([]);
+
+    await runBarnacleAutoResponse({
+      github,
+      context: barnacleIssueContext({
+        title: "[Skill Review Request] claw-calendar marked as suspicious.llm_suspicious",
+        body: [
+          "Please re-review this ClawHub skill after metadata fixes.",
+          "The skill is still flagged suspicious by the scanner.",
+          "Skill URL: https://clawhub.ai/openclaw/claw-calendar",
+        ].join("\n"),
+      }),
+      core: {
+        info: () => undefined,
+      },
+    });
+
+    expect(calls.addLabels).toContainEqual(
+      expect.objectContaining({
+        labels: expect.arrayContaining(["r: rescan-guidance"]),
+      }),
+    );
+    expect(calls.createComment).toEqual([]);
+    expect(calls.update).toEqual([]);
+  });
+
+  it("labels obvious security reports even when security is not in the title", async () => {
+    const { calls, github } = barnacleGithub([]);
+
+    await runBarnacleAutoResponse({
+      github,
+      context: barnacleIssueContext({
+        title: "Skill package exposes plaintext credentials",
+        body: "A published skill appears to hardcode a live API token in the package.",
+      }),
+      core: {
+        info: () => undefined,
+      },
+    });
+
+    expect(calls.addLabels).toContainEqual(
+      expect.objectContaining({
+        labels: expect.arrayContaining(["security"]),
+      }),
+    );
+    expect(calls.createComment).toEqual([]);
+    expect(calls.update).toEqual([]);
+  });
+
+  it("keeps the existing title-based security issue label behavior", async () => {
+    const { calls, github } = barnacleGithub([]);
+
+    await runBarnacleAutoResponse({
+      github,
+      context: barnacleIssueContext({
+        title: "Security report for published skill",
+        body: "Please review.",
+      }),
+      core: {
+        info: () => undefined,
+      },
+    });
+
+    expect(calls.addLabels).toContainEqual(
+      expect.objectContaining({
+        labels: expect.arrayContaining(["security"]),
       }),
     );
   });

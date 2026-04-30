@@ -1,4 +1,5 @@
 // Barnacle owns deterministic GitHub triage and auto-response behavior.
+import { classifyRescanRequest, RESCAN_GUIDANCE_LABEL } from "./clawhub-rescan-auto-response.mjs";
 
 export const activePrLimit = 10;
 
@@ -52,6 +53,10 @@ export const managedLabelSpecs = {
   "r: direct-skill-content": {
     color: "D93F0B",
     description: "Auto-close: skill content must be published through ClawHub, not PR'd.",
+  },
+  [RESCAN_GUIDANCE_LABEL]: {
+    color: "BFDADC",
+    description: "Auto-close: rescan/review requests should use owner rescan flow.",
   },
   "r: too-many-prs": {
     color: "D93F0B",
@@ -221,6 +226,35 @@ function stripPullRequestTemplateBoilerplate(text) {
     .replace(/Describe the problem and fix in 2(?:-|–)5 bullets:/g, "");
 }
 
+function issueText(issue) {
+  return `${issue.title ?? ""}\n${issue.body ?? ""}`.trim();
+}
+
+export function isSkillSubmissionIssue(issue) {
+  const text = issueText(issue);
+  return (
+    /\bcan\s+this\s+skill\s+be\s+added\b/i.test(text) ||
+    (/\b(?:project|repository|repo)\s+url\s*:/i.test(text) &&
+      /\b(?:skill|skills|agent\s+skill|skill\s+pack)\b/i.test(text) &&
+      /\b(?:give\s+it\s+a\s+try|star\s+(?:the\s+)?repo|please\s+add|add\s+(?:this\s+)?skill|include\s+(?:this\s+)?skill|submit(?:ting)?\s+(?:a\s+)?skill)\b/i.test(
+        text,
+      ))
+  );
+}
+
+export function isSecurityReportIssue(issue) {
+  const text = issueText(issue);
+  const hasSecretSignal =
+    /\b(?:credential|credentials|secret|token|api\s*key|bearer|password|mnemonic|service[-\s]?role|private\s+key|plaintext)\b/i.test(
+      text,
+    );
+  const hasExposureSignal =
+    /\b(?:leak|expos(?:e|ed|es|ure)|commit(?:ted)?|hardcod(?:e|ed|es|ing)|plaintext|steal|exfiltrat(?:e|es|ed|ing|ion)|post(?:s|ed|ing)?|send(?:s|ing)?|sent|upload(?:s|ed|ing)?|transmit(?:s|ted|ting)?|argv|process\s+env)\b/i.test(
+      text,
+    );
+  return /\bsecurity\b/i.test(issue.title ?? "") || (hasSecretSignal && hasExposureSignal);
+}
+
 export function hasConcreteBehaviorContext(body, text) {
   if (hasLinkedReference(text)) {
     return true;
@@ -308,6 +342,7 @@ export function classifyPullRequestCandidateLabels(pullRequest, files) {
   const filenames = files.map((file) => file.filename);
   const body = pullRequest.body ?? "";
   const text = `${pullRequest.title ?? ""}\n${body}`;
+  const signalText = stripPullRequestTemplateBoilerplate(text);
   const linkedReference = hasLinkedReference(text);
   const blankTemplate = hasMostlyBlankTemplate(body);
   const concreteBehaviorContext = blankTemplate
@@ -344,7 +379,7 @@ export function classifyPullRequestCandidateLabels(pullRequest, files) {
   if (
     !linkedReference &&
     !concreteBehaviorContext &&
-    /\b(refactor|cleanup|clean up|rename|formatting|style-only|style only)\b/i.test(text)
+    /\b(refactor|cleanup|clean up|rename|formatting|style-only|style only)\b/i.test(signalText)
   ) {
     labelsToAdd.push(candidateLabels.refactorOnly);
   }
@@ -525,6 +560,30 @@ async function applyPullRequestCandidateLabels(github, context, core, pullReques
   );
 }
 
+async function applyIssueCandidateLabels(github, context, core, issue, labelSet) {
+  const labelsToAdd = [];
+
+  if (isSkillSubmissionIssue(issue)) {
+    labelsToAdd.push("r: direct-skill-content");
+  }
+
+  if (
+    classifyRescanRequest({
+      ...issue,
+      labels: [...labelSet].map((name) => ({ name })),
+      state: issue.state ?? "OPEN",
+    }).matched
+  ) {
+    labelsToAdd.push(RESCAN_GUIDANCE_LABEL);
+  }
+
+  if (isSecurityReportIssue(issue) && !labelSet.has("security")) {
+    labelsToAdd.push("security");
+  }
+
+  await addMissingLabels(github, context, core, issue.number, labelsToAdd, labelSet);
+}
+
 function isAutomationActor(context) {
   const sender = context.payload.sender;
   const login = sender?.login ?? context.actor ?? "";
@@ -669,22 +728,19 @@ export async function runBarnacleAutoResponse({ github, context, core = console 
       body: `${issue.title ?? ""}\n${issue.body ?? ""}`,
       author: issue.user?.login ?? "",
     });
-
-    if (/\bsecurity\b/i.test(issue.title ?? "") && !labelSet.has("security")) {
-      await github.rest.issues.addLabels({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        issue_number: issue.number,
-        labels: ["security"],
-      });
-      labelSet.add("security");
-    }
   }
 
   const hasTriggerLabel = labelSet.has(triggerLabel);
   if (hasTriggerLabel) {
     await removeLabels(github, context, target.number, [triggerLabel], labelSet);
   }
+
+  const isLabelEvent = context.payload.action === "labeled";
+  const isPrCandidateEvent =
+    pullRequest &&
+    ["opened", "edited", "synchronize", "reopened", "labeled"].includes(context.payload.action);
+  const isIssueCandidateEvent =
+    issue && ["opened", "edited", "reopened", "labeled"].includes(context.payload.action);
 
   if (labelSet.has(badBarnacleLabel)) {
     core.info(
@@ -693,15 +749,15 @@ export async function runBarnacleAutoResponse({ github, context, core = console 
     return;
   }
 
-  const isLabelEvent = context.payload.action === "labeled";
-  const isPrCandidateEvent =
-    pullRequest &&
-    ["opened", "edited", "synchronize", "reopened", "labeled"].includes(context.payload.action);
-  if (!hasTriggerLabel && !isLabelEvent && !isPrCandidateEvent) {
+  if (!hasTriggerLabel && !isLabelEvent && !isPrCandidateEvent && !isIssueCandidateEvent) {
     return;
   }
 
   await syncManagedLabels(github, context);
+
+  if (issue && isIssueCandidateEvent) {
+    await applyIssueCandidateLabels(github, context, core, issue, labelSet);
+  }
 
   if (pullRequest) {
     const isMaintainerAuthoredPullRequest = await isPrivilegedPullRequestAuthor(
