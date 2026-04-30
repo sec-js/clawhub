@@ -126,7 +126,7 @@ export function getScanStatusInfo(status: string) {
     case "malicious":
       return { label: "Malicious", className: "scan-status-malicious" };
     case "suspicious":
-      return { label: "Suspicious", className: "scan-status-suspicious" };
+      return { label: "Review", className: "scan-status-suspicious" };
     case "loading":
       return { label: "Loading...", className: "scan-status-pending" };
     case "pending":
@@ -394,7 +394,7 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
               {verdict === "malicious"
                 ? "Do not install this skill"
                 : verdict === "suspicious"
-                  ? "What to consider before installing"
+                  ? "Review before installing"
                   : "Assessment"}
             </div>
             {analysis.guidance}

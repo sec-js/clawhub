@@ -165,6 +165,41 @@ describe("securityPrompt", () => {
     ]);
   });
 
+  it("parses sparse ASI findings for benign staged ClawScan responses", () => {
+    const parsed = parseLlmEvalResponse(
+      newResponse({
+        verdict: "benign",
+        confidence: "high",
+        summary: "The skill is coherent and proportionate.",
+        agentic_risk_findings: [],
+        risk_summary: {
+          abnormal_behavior_control: {
+            status: "none",
+            highest_severity: "none",
+            summary: "No artifact-backed abnormal behavior control issue is evidenced.",
+          },
+          permission_boundary: {
+            status: "none",
+            highest_severity: "none",
+            summary: "No artifact-backed permission boundary issue is evidenced.",
+          },
+          sensitive_data_protection: {
+            status: "none",
+            highest_severity: "none",
+            summary: "No artifact-backed sensitive data protection issue is evidenced.",
+          },
+        },
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      verdict: "benign",
+      confidence: "high",
+      agenticRiskFindings: [],
+    });
+    expect(parsed?.riskSummary?.abnormal_behavior_control.status).toBe("none");
+  });
+
   it("defaults LLM evals to OpenAI priority service tier", () => {
     const previous = process.env.OPENAI_EVAL_SERVICE_TIER;
     delete process.env.OPENAI_EVAL_SERVICE_TIER;
@@ -218,6 +253,24 @@ describe("securityPrompt", () => {
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("not assessable without execution");
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("purpose-aligned");
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("purpose-mismatched");
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
+      "Start with a plain artifact-coherence review",
+    );
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
+      "Do not hunt for every ASI category",
+    );
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
+      'The internal verdict value "suspicious" is the user-facing Review bucket',
+    );
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
+      "Prefer benign for coherent, disclosed, purpose-aligned behavior",
+    );
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
+      "reading or using local auth/session/profile stores",
+    );
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).not.toContain(
+      "Return one agentic_risk_findings item for each ASI01 through ASI10",
+    );
   });
 
   it("includes static scan and capability signals in skill eval input", () => {
