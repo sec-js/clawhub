@@ -1,15 +1,16 @@
 {
   "schema_version": "1.0",
   "corpus": "skilltester-clawhub",
-  "generated_at": "2026-04-29T23:48:19.057Z",
+  "generated_at": "2026-04-30T00:13:54.012Z",
   "builder": {
     "script": "scripts/build-skilltester-clawhub-corpus.ts",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "sources": {
     "skilltester": {
       "base_url": "https://skilltester.ai",
       "source": "ClawHub",
+      "mode": "live_api",
       "query": {
         "source": "ClawHub",
         "tested": "all",
@@ -18,16 +19,22 @@
         "summary": 1,
         "page_size": 100,
         "limit": "none"
+      },
+      "raw_snapshot": {
+        "summary_pages_file": "raw/summary-pages.jsonl",
+        "details_file": "raw/details.jsonl"
       }
     },
     "skills_repo": {
       "url": "https://github.com/openclaw/skills",
-      "head": "684cb3999b54fef506029c36d33069b5ab8261a6",
+      "head": "8ccb9e5a892083f48352e6869e84bbc534c00ad9",
       "access": "gh repo clone with shallow blobless checkout plus gh api raw reads for exact SKILL.md commits"
     }
   },
   "output": {
     "corpus_file": "corpus.jsonl",
+    "raw_summary_pages_file": "raw/summary-pages.jsonl",
+    "raw_details_file": "raw/details.jsonl",
     "rows": 356
   },
   "counts": {

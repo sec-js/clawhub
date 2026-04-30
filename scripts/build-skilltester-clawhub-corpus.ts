@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,8 +9,9 @@ const SKILLTESTER_BASE_URL = "https://skilltester.ai";
 const SKILLTESTER_SOURCE = "ClawHub";
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_OUTPUT_DIR = "eval/corpora/skilltester-clawhub";
+const RAW_DIR_NAME = "raw";
 const CORPUS_SCHEMA_VERSION = "1.0";
-const BUILDER_VERSION = "1.0.0";
+const BUILDER_VERSION = "1.1.0";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -84,6 +85,7 @@ export type BuildOptions = {
   limit?: number;
   keepTemp: boolean;
   dryRun: boolean;
+  fromRawDir?: string;
   fetchImpl: FetchLike;
 };
 
@@ -219,7 +221,12 @@ type BuildManifest = {
     skilltester: {
       base_url: string;
       source: string;
+      mode: "live_api" | "raw_snapshot";
       query: Record<string, string | number>;
+      raw_snapshot?: {
+        summary_pages_file: string;
+        details_file: string;
+      };
     };
     skills_repo: {
       url: "https://github.com/openclaw/skills";
@@ -229,6 +236,8 @@ type BuildManifest = {
   };
   output: {
     corpus_file: string;
+    raw_summary_pages_file: string;
+    raw_details_file: string;
     rows: number;
   };
   counts: BuildCounts;
@@ -239,6 +248,27 @@ type BuildManifest = {
     version?: string;
     reason: string;
   }>;
+};
+
+type RawSummaryPageRecord = {
+  url: string;
+  fetched_at: string;
+  payload: SkillTesterSummaryResponse;
+};
+
+type RawDetailRecord = {
+  url: string;
+  skill_name: string;
+  fetched_at: string;
+  payload: SkillTesterDetail;
+};
+
+type SkillTesterSnapshot = {
+  summaries: SkillTesterSummaryItem[];
+  summaryPages: RawSummaryPageRecord[];
+  details: Map<string, SkillTesterDetail>;
+  rawDetails: RawDetailRecord[];
+  fromRaw: boolean;
 };
 
 function run(command: string, args: string[], options: { cwd?: string } = {}): RunResult {
@@ -316,6 +346,16 @@ function parseArgs(argv: string[]): CliOptions {
       case "--dry-run":
         options.dryRun = true;
         break;
+      case "--from-raw": {
+        const next = argv[i + 1];
+        if (next && !next.startsWith("--")) {
+          options.fromRawDir = next;
+          i += 1;
+        } else {
+          options.fromRawDir = join(options.outputDir, RAW_DIR_NAME);
+        }
+        break;
+      }
       case "--help":
         printHelp();
         process.exit(0);
@@ -334,6 +374,7 @@ Options:
   --output-dir <path>  Corpus output directory (default: ${DEFAULT_OUTPUT_DIR})
   --page-size <n>      SkillTester page size (default: ${DEFAULT_PAGE_SIZE})
   --limit <n>          Limit rows for smoke builds
+  --from-raw [path]    Rebuild from saved raw SkillTester JSONL instead of SkillTester API
   --keep-temp          Keep the temporary openclaw/skills clone
   --dry-run            Fetch and resolve rows without writing corpus files
   --help               Show this help
@@ -621,7 +662,19 @@ export async function fetchSkillTesterSummaries(params: {
   pageSize: number;
   limit?: number;
 }): Promise<SkillTesterSummaryItem[]> {
+  const snapshot = await fetchSkillTesterSnapshot(params);
+  return snapshot.summaries;
+}
+
+async function fetchSkillTesterSnapshot(params: {
+  fetchImpl: FetchLike;
+  pageSize: number;
+  limit?: number;
+}): Promise<SkillTesterSnapshot> {
   const rows: SkillTesterSummaryItem[] = [];
+  const summaryPages: RawSummaryPageRecord[] = [];
+  const details: Map<string, SkillTesterDetail> = new Map();
+  const rawDetails: RawDetailRecord[] = [];
   let page = 1;
 
   while (true) {
@@ -635,26 +688,103 @@ export async function fetchSkillTesterSummaries(params: {
     url.searchParams.set("summary", "1");
 
     const payload = await fetchJson<SkillTesterSummaryResponse>(params.fetchImpl, url.toString());
+    summaryPages.push({
+      url: url.toString(),
+      fetched_at: new Date().toISOString(),
+      payload,
+    });
     for (const item of payload.items ?? []) {
       rows.push(item);
-      if (params.limit && rows.length >= params.limit) return rows;
+      if (params.limit && rows.length >= params.limit) {
+        return {
+          summaries: rows,
+          summaryPages,
+          details,
+          rawDetails,
+          fromRaw: false,
+        };
+      }
     }
 
-    if (!payload.has_next) return rows;
+    if (!payload.has_next) {
+      return {
+        summaries: rows,
+        summaryPages,
+        details,
+        rawDetails,
+        fromRaw: false,
+      };
+    }
     page += 1;
   }
 }
 
-async function fetchSkillTesterDetail(
+async function fetchAndRecordSkillTesterDetail(
   fetchImpl: FetchLike,
   skillName: string,
-): Promise<SkillTesterDetail> {
-  const url = `${SKILLTESTER_BASE_URL}/api/skills/${SKILLTESTER_SOURCE}/${encodeURIComponent(skillName)}`;
-  return await fetchJson<SkillTesterDetail>(fetchImpl, url);
+): Promise<{ detail: SkillTesterDetail; raw: RawDetailRecord }> {
+  const url = detailUrl(skillName);
+  const detail = await fetchJson<SkillTesterDetail>(fetchImpl, url);
+  return {
+    detail,
+    raw: {
+      url,
+      skill_name: skillName,
+      fetched_at: new Date().toISOString(),
+      payload: detail,
+    },
+  };
 }
 
 function detailUrl(skillName: string): string {
   return `${SKILLTESTER_BASE_URL}/api/skills/${SKILLTESTER_SOURCE}/${encodeURIComponent(skillName)}`;
+}
+
+async function readJsonl<T>(path: string): Promise<T[]> {
+  const raw = await readFile(path, "utf8");
+  if (raw.trim() === "") return [];
+  return raw
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as T);
+}
+
+export async function loadSkillTesterSnapshotFromRaw(params: {
+  rawDir: string;
+  limit?: number;
+}): Promise<SkillTesterSnapshot> {
+  const summaryPages = await readJsonl<RawSummaryPageRecord>(
+    join(params.rawDir, "summary-pages.jsonl"),
+  );
+  const rawDetails = await readJsonl<RawDetailRecord>(join(params.rawDir, "details.jsonl"));
+  const summaries: SkillTesterSummaryItem[] = [];
+  for (const page of summaryPages) {
+    for (const item of page.payload.items ?? []) {
+      summaries.push(item);
+      if (params.limit && summaries.length >= params.limit) break;
+    }
+    if (params.limit && summaries.length >= params.limit) break;
+  }
+
+  const detailNames = new Set(
+    summaries.flatMap((summary) =>
+      typeof summary.skill_name === "string" && summary.skill_name ? [summary.skill_name] : [],
+    ),
+  );
+  const details = new Map<string, SkillTesterDetail>();
+  const scopedRawDetails = rawDetails.filter((record) => {
+    const include = detailNames.has(record.skill_name);
+    if (include) details.set(record.skill_name, record.payload);
+    return include;
+  });
+
+  return {
+    summaries,
+    summaryPages,
+    details,
+    rawDetails: scopedRawDetails,
+    fromRaw: true,
+  };
 }
 
 function distilledSecurityTasks(detail: SkillTesterDetail | null): unknown[] {
@@ -858,13 +988,38 @@ async function writeCorpus(params: {
   outputDir: string;
   rows: CorpusRow[];
   manifest: BuildManifest;
+  snapshot: SkillTesterSnapshot;
 }) {
   await mkdir(params.outputDir, { recursive: true });
   const corpusFile = join(params.outputDir, "corpus.jsonl");
   const manifestFile = join(params.outputDir, "manifest.json");
+  const rawDir = join(params.outputDir, RAW_DIR_NAME);
   const jsonl = params.rows.map((row) => JSON.stringify(row)).join("\n");
   await writeFile(corpusFile, `${jsonl}\n`, "utf8");
   await writeFile(manifestFile, `${JSON.stringify(params.manifest, null, 2)}\n`, "utf8");
+  await mkdir(rawDir, { recursive: true });
+  await writeFile(
+    join(rawDir, "summary-pages.jsonl"),
+    `${params.snapshot.summaryPages.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    "utf8",
+  );
+  await writeFile(
+    join(rawDir, "details.jsonl"),
+    `${params.snapshot.rawDetails.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    "utf8",
+  );
+  await writeFile(
+    join(rawDir, "README.md"),
+    [
+      "# Raw SkillTester Snapshot",
+      "",
+      "These JSONL files preserve the raw SkillTester API payloads used to build",
+      "the normalized corpus. They let the corpus be rebuilt with",
+      "`bun run eval:corpus:build -- --from-raw` if SkillTester is unavailable.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
 }
 
 export async function buildCorpus(options: BuildOptions): Promise<{
@@ -877,11 +1032,14 @@ export async function buildCorpus(options: BuildOptions): Promise<{
     const repoIndex = buildSkillRepoIndex(skillsRepo.repoDir);
     console.log(`Indexed ${repoIndex.size} skill slug(s) from openclaw/skills`);
 
-    const summaries = await fetchSkillTesterSummaries({
-      fetchImpl: options.fetchImpl,
-      pageSize: options.pageSize,
-      limit: options.limit,
-    });
+    const snapshot = options.fromRawDir
+      ? await loadSkillTesterSnapshotFromRaw({ rawDir: options.fromRawDir, limit: options.limit })
+      : await fetchSkillTesterSnapshot({
+          fetchImpl: options.fetchImpl,
+          pageSize: options.pageSize,
+          limit: options.limit,
+        });
+    const summaries = snapshot.summaries;
     const counts = createInitialCounts();
     counts.summaryRowsFetched = summaries.length;
     const rows: CorpusRow[] = [];
@@ -891,7 +1049,15 @@ export async function buildCorpus(options: BuildOptions): Promise<{
       let detail: SkillTesterDetail | null = null;
       if (typeof skillName === "string" && skillName.length > 0) {
         try {
-          detail = await fetchSkillTesterDetail(options.fetchImpl, skillName);
+          if (snapshot.fromRaw) {
+            detail = snapshot.details.get(skillName) ?? null;
+            if (!detail) throw new Error(`Raw SkillTester snapshot has no detail for ${skillName}`);
+          } else {
+            const recorded = await fetchAndRecordSkillTesterDetail(options.fetchImpl, skillName);
+            detail = recorded.detail;
+            snapshot.details.set(skillName, recorded.detail);
+            snapshot.rawDetails.push(recorded.raw);
+          }
           counts.detailRowsFetched += 1;
         } catch (error) {
           counts.detailFetchFailed += 1;
@@ -936,6 +1102,7 @@ export async function buildCorpus(options: BuildOptions): Promise<{
         skilltester: {
           base_url: SKILLTESTER_BASE_URL,
           source: SKILLTESTER_SOURCE,
+          mode: snapshot.fromRaw ? "raw_snapshot" : "live_api",
           query: {
             source: SKILLTESTER_SOURCE,
             tested: "all",
@@ -944,6 +1111,10 @@ export async function buildCorpus(options: BuildOptions): Promise<{
             summary: 1,
             page_size: options.pageSize,
             limit: options.limit ?? "none",
+          },
+          raw_snapshot: {
+            summary_pages_file: "raw/summary-pages.jsonl",
+            details_file: "raw/details.jsonl",
           },
         },
         skills_repo: {
@@ -955,6 +1126,8 @@ export async function buildCorpus(options: BuildOptions): Promise<{
       },
       output: {
         corpus_file: "corpus.jsonl",
+        raw_summary_pages_file: "raw/summary-pages.jsonl",
+        raw_details_file: "raw/details.jsonl",
         rows: rows.length,
       },
       counts,
@@ -962,7 +1135,7 @@ export async function buildCorpus(options: BuildOptions): Promise<{
     };
 
     if (!options.dryRun) {
-      await writeCorpus({ outputDir: options.outputDir, rows, manifest });
+      await writeCorpus({ outputDir: options.outputDir, rows, manifest, snapshot });
       console.log(
         `Wrote ${rows.length} corpus row(s) to ${join(options.outputDir, "corpus.jsonl")}`,
       );

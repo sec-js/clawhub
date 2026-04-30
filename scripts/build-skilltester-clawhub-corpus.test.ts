@@ -8,6 +8,7 @@ import {
   buildSkillRepoIndex,
   extractSlugFromSkillUrl,
   fetchSkillTesterSummaries,
+  loadSkillTesterSnapshotFromRaw,
   parseSkillTesterName,
   resolveArtifactForRecord,
   type SkillTesterDetail,
@@ -207,5 +208,45 @@ describe("SkillTester ClawHub corpus builder helpers", () => {
     expect(rows.map((row) => row.skill_name)).toEqual(["one-1.0.0", "two-1.0.0", "three-1.0.0"]);
     expect(requestedUrls).toHaveLength(2);
     expect(requestedUrls[0]).toContain("source=ClawHub");
+  });
+
+  it("loads a preserved raw SkillTester snapshot without network access", async () => {
+    const rawDir = await makeTempDir("clawhub-corpus-raw-");
+    await writeRepoFile(
+      rawDir,
+      "summary-pages.jsonl",
+      `${JSON.stringify({
+        url: "https://skilltester.ai/api/skills?page=1",
+        fetched_at: "2026-04-29T00:00:00.000Z",
+        payload: {
+          items: [{ skill_name: "one-1.0.0" }, { skill_name: "two-1.0.0" }],
+          has_next: false,
+        },
+      })}\n`,
+    );
+    await writeRepoFile(
+      rawDir,
+      "details.jsonl",
+      `${JSON.stringify({
+        url: "https://skilltester.ai/api/skills/ClawHub/one-1.0.0",
+        skill_name: "one-1.0.0",
+        fetched_at: "2026-04-29T00:00:00.000Z",
+        payload: { skill: { skill_url: "https://clawhub.ai/skills/one" } },
+      })}\n${JSON.stringify({
+        url: "https://skilltester.ai/api/skills/ClawHub/two-1.0.0",
+        skill_name: "two-1.0.0",
+        fetched_at: "2026-04-29T00:00:00.000Z",
+        payload: { skill: { skill_url: "https://clawhub.ai/skills/two" } },
+      })}\n`,
+    );
+
+    const snapshot = await loadSkillTesterSnapshotFromRaw({ rawDir, limit: 1 });
+
+    expect(snapshot.fromRaw).toBe(true);
+    expect(snapshot.summaries.map((summary) => summary.skill_name)).toEqual(["one-1.0.0"]);
+    expect(snapshot.details.get("one-1.0.0")?.skill?.skill_url).toBe(
+      "https://clawhub.ai/skills/one",
+    );
+    expect(snapshot.rawDetails).toHaveLength(1);
   });
 });

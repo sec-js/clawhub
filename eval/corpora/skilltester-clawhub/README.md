@@ -3,6 +3,8 @@
 This directory contains the source-controlled corpus snapshot for CLAW-57.
 Future ClawScan eval runs should read `corpus.jsonl` from this directory instead
 of calling SkillTester, ClawHub, GitHub, or a local skills checkout at runtime.
+The `raw/` directory preserves the raw SkillTester API payloads used to build
+the normalized corpus.
 
 ## Provenance
 
@@ -16,6 +18,13 @@ The rebuild script fetches SkillTester ClawHub reference records, makes a
 shallow blobless clone of `openclaw/skills` through the authenticated `gh`/git
 setup, and uses authenticated `gh api` raw-content reads for each exact
 version's recorded `SKILL.md`.
+
+If SkillTester is unavailable, rebuild the normalized corpus from the preserved
+raw snapshot:
+
+```bash
+bun run eval:corpus:build -- --from-raw
+```
 
 ## Reference Labels
 
