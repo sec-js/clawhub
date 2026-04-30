@@ -127,6 +127,8 @@ const FFMPEG_FORCE_OUTPUT_PATTERN =
   /subprocess\.run\s*\(\s*\[[\s\S]{0,1000}["']ffmpeg["'][\s\S]{0,1000}["']-y["'][\s\S]{0,1000}str\s*\(\s*output_path\s*\)/i;
 const OUTPUT_PATH_GUARD_PATTERN =
   /TemporaryDirectory|mkdtemp|tempfile\.|resolve\s*\(\s*\).*relative_to|is_relative_to\s*\(/i;
+const INSECURE_TLS_VERIFICATION_PATTERN =
+  /ssl\._create_unverified_context\s*\(|ssl\.CERT_NONE\b|check_hostname\s*=\s*False\b|verify\s*=\s*False\b|rejectUnauthorized\s*:\s*false\b|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*["']?0["']?/i;
 const PYTHON_AGENT_FILENAME_PATTERN =
   /\b(?:filename\s*:\s*str|req\.filename|filename\s*=|["']filename["'])\b/i;
 const PYTHON_RCLONE_FILENAME_SINK_PATTERN =
@@ -727,6 +729,18 @@ function scanCodeFile(
       line: unsafeAgentControlledFileWrite.line,
       message: "Agent-controlled output path is passed to an overwrite-capable subprocess.",
       evidence: unsafeAgentControlledFileWrite.text,
+    });
+  }
+
+  if (INSECURE_TLS_VERIFICATION_PATTERN.test(content)) {
+    const match = findFirstLine(content, INSECURE_TLS_VERIFICATION_PATTERN);
+    addFinding(findings, {
+      code: REASON_CODES.INSECURE_TLS_VERIFICATION,
+      severity: "warn",
+      file: path,
+      line: match.line,
+      message: "HTTPS certificate verification is disabled.",
+      evidence: match.text,
     });
   }
 

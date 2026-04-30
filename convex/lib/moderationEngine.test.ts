@@ -96,6 +96,32 @@ describe("moderationEngine", () => {
     );
   });
 
+  it("flags code that disables HTTPS certificate verification", () => {
+    const result = runStaticModerationScan({
+      slug: "cms-config-myclaw",
+      displayName: "CMS Config MyClaw",
+      summary: "Configure robots",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/http_support.py", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/http_support.py",
+          content: [
+            "import ssl",
+            "from urllib.request import urlopen",
+            "ssl_context = ssl._create_unverified_context()",
+            "with urlopen(request, timeout=timeout, context=ssl_context) as response:",
+            "    return response.read()",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.insecure_tls_verification");
+    expect(result.status).toBe("suspicious");
+  });
+
   it("flags .env files that ship API tokens and plaintext CGNAT endpoints", () => {
     const siyuanToken = "sk_siyuan_live_1234567890abcdef";
     const result = runStaticModerationScan({
