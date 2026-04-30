@@ -20,11 +20,10 @@ async function makeTmpDir(prefix: string) {
 }
 
 function runNode(args: string[]) {
-  const { FORCE_COLOR: _forceColor, ...env } = process.env;
   return spawnSync("node", args, {
     cwd: repoRoot,
     encoding: "utf8",
-    env,
+    env: process.env,
   });
 }
 
