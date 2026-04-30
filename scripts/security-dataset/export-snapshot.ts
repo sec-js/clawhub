@@ -45,6 +45,7 @@ type Options = {
 	mode: "public";
 	limit: number | null;
 	pageSize: number;
+	batchPages: number;
 	concurrency: number;
 	shards: number;
 	outDir: string;
@@ -82,9 +83,10 @@ type SnapshotWriters = {
 };
 
 const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_BATCH_PAGES = 5;
 const DEFAULT_CONCURRENCY = 6;
 const DEFAULT_SHARDS = 12;
-const DEFAULT_MAX_CONVEX_ATTEMPTS = 4;
+const DEFAULT_MAX_CONVEX_ATTEMPTS = 6;
 const DEFAULT_OUT_DIR = ".data/security-dataset/snapshots";
 const CONVEX_RUN_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
 const SOURCE_KINDS: SourceKind[] = ["skill", "package"];
@@ -158,10 +160,8 @@ function filterExportInputs(
 ) {
 	return inputs.filter((input) => {
 		if (sourceKind !== "all" && input.sourceKind !== sourceKind) return false;
-		if (timeWindow.createdAtGte !== undefined && input.createdAt < timeWindow.createdAtGte)
-			return false;
-		if (timeWindow.createdAtLt !== undefined && input.createdAt >= timeWindow.createdAtLt)
-			return false;
+		if (timeWindow.createdAtGte !== null && input.createdAt < timeWindow.createdAtGte) return false;
+		if (timeWindow.createdAtLt !== null && input.createdAt >= timeWindow.createdAtLt) return false;
 		return true;
 	});
 }
@@ -224,10 +224,11 @@ async function runConvexPage(
 		createdAtGte: shard.createdAtGte,
 		createdAtLt: shard.createdAtLt,
 		paginationOpts: { cursor, numItems },
+		pageCount: options.batchPages,
 	};
 	return runConvexJson<ConvexPage>(
 		options,
-		"securityDataset:listArtifactExportPageInternal",
+		"securityDataset:listArtifactExportBatchInternal",
 		args,
 		isConvexPage,
 	);
@@ -501,6 +502,7 @@ function parseArgs(args: string[]): Options {
 		mode: "public",
 		limit: null,
 		pageSize: DEFAULT_PAGE_SIZE,
+		batchPages: DEFAULT_BATCH_PAGES,
 		concurrency: DEFAULT_CONCURRENCY,
 		shards: DEFAULT_SHARDS,
 		outDir: DEFAULT_OUT_DIR,
@@ -523,6 +525,8 @@ function parseArgs(args: string[]): Options {
 			options.limit = readPositiveInt(readValue(args, ++index, arg), arg);
 		} else if (arg === "--page-size") {
 			options.pageSize = readPositiveInt(readValue(args, ++index, arg), arg);
+		} else if (arg === "--batch-pages") {
+			options.batchPages = readPositiveInt(readValue(args, ++index, arg), arg);
 		} else if (arg === "--concurrency") {
 			options.concurrency = readPositiveInt(readValue(args, ++index, arg), arg);
 		} else if (arg === "--shards") {
