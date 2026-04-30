@@ -23,6 +23,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Peer deps
         run: bun run check:peers
+      - name: Audit dependencies
+        run: bun audit
 
       - name: Format
         if: github.event_name == 'pull_request'
