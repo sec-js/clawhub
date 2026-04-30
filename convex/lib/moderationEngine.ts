@@ -134,6 +134,12 @@ const PYTHON_URL_ENV_PATTERN =
 const PYTHON_HTTP_POST_PATTERN =
   /\b(?:requests|session|self\.session|client)\.post\s*\(|\.post\s*\(/i;
 const PASSWORD_PAYLOAD_PATTERN = /["']password["']\s*:|password\s*=/i;
+const AUTONOMOUS_AGENT_SCHEDULE_PATTERN =
+  /\bAUTO_ANSWER\s*=\s*(?:true|os\.getenv\s*\(\s*["']AUTO_ANSWER["']\s*,\s*["']true["'])|while\s+True\s*:|time\.sleep\s*\(\s*(?:[3-9]\d{2,}|[1-9]\d{3,})\s*\)|\binterval\s*=\s*(?:[3-9]\d{2,}|[1-9]\d{3,})|"kind"\s*:\s*"cron"|"expr"\s*:\s*["'][^"']*\*\/(?:[1-5]?\d)\b/is;
+const CREDENTIAL_BEARING_AGENT_PATTERN =
+  /\b(?:X-API-Key|api_key|API_KEY|VDOOB_API_KEY|AGENT_ID|agent_config\.json)\b/i;
+const AUTONOMOUS_ANSWER_EGRESS_PATTERN =
+  /\b(?:requests|session|client)\.post\s*\([\s\S]{0,1000}(?:submit-answer|agent-withdrawals|agents\/register|messages\/agent)|\b(?:submit_answer|answer_question|act_cron_check)\b/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -457,6 +463,23 @@ function findPythonCredentialPostToEnvUrl(content: string) {
   if (!PYTHON_HTTP_POST_PATTERN.test(content)) return null;
   if (!PASSWORD_PAYLOAD_PATTERN.test(content)) return null;
   return findFirstLine(content, PYTHON_HTTP_POST_PATTERN);
+}
+
+function findAutonomousCredentialEgress(files: TextFile[]) {
+  const packageText = files.map((file) => file.content).join("\n");
+  if (!AUTONOMOUS_AGENT_SCHEDULE_PATTERN.test(packageText)) return null;
+  if (!CREDENTIAL_BEARING_AGENT_PATTERN.test(packageText)) return null;
+  if (!AUTONOMOUS_ANSWER_EGRESS_PATTERN.test(packageText)) return null;
+
+  for (const file of files) {
+    if (!AUTONOMOUS_ANSWER_EGRESS_PATTERN.test(file.content)) continue;
+    const match = findFirstLine(file.content, AUTONOMOUS_ANSWER_EGRESS_PATTERN);
+    return { file: file.path, line: match.line, text: match.text };
+  }
+
+  const fallback = files[0];
+  if (!fallback) return null;
+  return { file: fallback.path, line: 1, text: fallback.content.split("\n")[0] ?? "" };
 }
 
 function normalizeEnvName(value: unknown) {
@@ -978,6 +1001,19 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
     scanCodeFile(file.path, file.content, findings, declaredEnvNames);
     scanMarkdownFile(file.path, file.content, findings);
     scanManifestFile(file.path, file.content, findings);
+  }
+
+  const autonomousCredentialEgress = findAutonomousCredentialEgress(files);
+  if (autonomousCredentialEgress) {
+    addFinding(findings, {
+      code: REASON_CODES.AUTONOMOUS_CREDENTIAL_EGRESS,
+      severity: "critical",
+      file: autonomousCredentialEgress.file,
+      line: autonomousCredentialEgress.line,
+      message:
+        "Autonomous schedule or loop submits credential-bearing agent output without per-call consent.",
+      evidence: autonomousCredentialEgress.text,
+    });
   }
 
   const installJson = JSON.stringify(input.metadata ?? {});

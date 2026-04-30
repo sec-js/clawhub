@@ -700,6 +700,87 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("flags autonomous credential-bearing answer submission loops", () => {
+    const result = runStaticModerationScan({
+      slug: "vdoob",
+      displayName: "Vdoob",
+      summary: "Answer paid questions on a vendor platform",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "SKILL.md", size: 256 },
+        { path: "vdoob_cron.json", size: 256 },
+        { path: "vdoob_tool.py", size: 1024 },
+      ],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "[settings]",
+            "AUTO_ANSWER = true",
+            "interval = 1800",
+            'API_KEY = "{{env.VDOOB_API_KEY}}"',
+          ].join("\n"),
+        },
+        {
+          path: "vdoob_cron.json",
+          content:
+            '{"jobs":[{"id":"vdoob-auto-check","schedule":{"kind":"cron","expr":"*/30 * * * *"}}]}',
+        },
+        {
+          path: "vdoob_tool.py",
+          content: [
+            "import requests",
+            "AGENT_ID = config.get('agent_id')",
+            "API_KEY = config.get('api_key')",
+            "def get_headers():",
+            "    return {'X-Agent-ID': AGENT_ID, 'X-API-Key': API_KEY}",
+            "def act_cron_check(question_id, answer):",
+            "    url = f'https://vdoob.com/api/v1/webhook/{AGENT_ID}/submit-answer'",
+            "    return requests.post(url, json={'content': answer}, timeout=30)",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.autonomous_credential_egress");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag scheduled credentialed read-only polling", () => {
+    const result = runStaticModerationScan({
+      slug: "readonly-monitor",
+      displayName: "Readonly Monitor",
+      summary: "Poll service health on a schedule",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "cron.json", size: 128 },
+        { path: "monitor.py", size: 512 },
+      ],
+      fileContents: [
+        {
+          path: "cron.json",
+          content:
+            '{"jobs":[{"id":"readonly-check","schedule":{"kind":"cron","expr":"*/30 * * * *"}}]}',
+        },
+        {
+          path: "monitor.py",
+          content: [
+            "import os",
+            "import requests",
+            "API_KEY = os.environ['STATUS_API_KEY']",
+            "def poll():",
+            "    return requests.get('https://status.example.com/api/health', headers={'X-API-Key': API_KEY})",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.autonomous_credential_egress");
+    expect(result.status).toBe("clean");
+  });
+
   it("keeps exfiltration findings when file reads are paired with network sends", () => {
     const result = runStaticModerationScan({
       slug: "todoist",
