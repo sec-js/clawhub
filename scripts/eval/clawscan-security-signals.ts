@@ -10,7 +10,6 @@ import {
   assembleSkillEvalUserMessage,
   detectInjectionPatterns,
   getLlmEvalModel,
-  getLlmEvalReasoningEffort,
   getLlmEvalServiceTier,
   LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   LLM_EVAL_MAX_OUTPUT_TOKENS,
@@ -36,9 +35,11 @@ const HF_SPLITS = new Set(["train", "validation", "test", "eval_holdout"]);
 const DEFAULT_OUTPUT_DIR = "eval/results/clawscan-security-signals";
 const DEFAULT_CACHE_DIR = "eval/cache/clawscan-security-signals";
 const DEFAULT_CONCURRENCY = 1;
+const DEFAULT_EVAL_REASONING_EFFORT: LlmEvalReasoningEffort = "xhigh";
 const REPORT_SCHEMA_VERSION = "1.2";
 
 type PromptKind = "old" | "new";
+type PromptMode = PromptKind | "both";
 type NormalizedVerdict = LlmEvalResponse["verdict"] | "unknown";
 type ReferenceBasis = "level" | "score" | "unknown";
 type CacheStatus = "hit" | "miss" | "mock" | "disabled";
@@ -92,8 +93,13 @@ export type CorpusRow = {
     };
   };
   reference_labels: {
+    source?: string | null;
     security_level?: string | null;
     security_score?: number | null;
+    moderation_consensus_level?: string | null;
+    moderation_consensus_score?: number | null;
+    skilltester_security_level?: string | null;
+    skilltester_security_score?: number | null;
   };
 };
 
@@ -119,6 +125,8 @@ type HfSecuritySignalsRow = {
       label_confidence?: string | null;
       reason_codes?: string[];
       notes_redacted?: string | null;
+      raw_label?: string | null;
+      score?: number | null;
     }>;
     scan_results?: Array<{
       scanner?: string;
@@ -167,6 +175,7 @@ type EvidenceQuality = {
 type PromptRunSummary = {
   prompt: PromptKind;
   parseOk: boolean;
+  skipped?: boolean;
   cache: CacheStatus;
   verdict?: LlmEvalResponse["verdict"];
   confidence?: LlmEvalResponse["confidence"];
@@ -198,6 +207,9 @@ type RowComparison = {
     basis: ReferenceBasis;
     securityLevel?: string;
     securityScore?: number;
+    source?: string | null;
+    moderationConsensusVerdict?: NormalizedVerdict;
+    skillTesterVerdict?: NormalizedVerdict;
   };
   old: PromptRunSummary;
   new: PromptRunSummary;
@@ -219,6 +231,8 @@ type PromptMetrics = {
   riskyReferenceDetected: number;
   riskyReferenceRecall: number | null;
   falsePositivesOnBenign: number;
+  skillTesterPassRows: number;
+  falsePositivesOnSkillTesterPass: number;
   verdicts: Record<LlmEvalResponse["verdict"], number>;
   evidenceQuality: EvidenceQuality;
 };
@@ -271,6 +285,7 @@ export type EvalReport = {
   model: string;
   reasoningEffort: LlmEvalReasoningEffort;
   serviceTier: LlmEvalServiceTier;
+  promptMode: PromptMode;
   concurrency: number;
   counts: {
     corpusRows: number;
@@ -326,6 +341,7 @@ type PromptRunner = (request: PromptRunRequest) => Promise<PromptRunResult>;
 
 export type RunComparisonOptions = {
   corpusFile: string | null;
+  hfJsonlFile: string | null;
   hfDataset: string | null;
   hfConfig: string;
   hfSplit: string;
@@ -336,8 +352,12 @@ export type RunComparisonOptions = {
   serviceTier?: LlmEvalServiceTier;
   concurrency?: number;
   limit?: number;
+  offset?: number;
   targets?: string[];
   securitySignalsRiskyOnly?: boolean;
+  referenceCleanOnly?: boolean;
+  skilltesterPassOnly?: boolean;
+  promptMode?: PromptMode;
   useCache: boolean;
   mock: boolean;
   writeReports: boolean;
@@ -354,6 +374,11 @@ const CLI_REASONING_EFFORTS = new Set<LlmEvalReasoningEffort>([
   "xhigh",
 ]);
 const CLI_SERVICE_TIERS = new Set<LlmEvalServiceTier>(["auto", "default", "flex", "priority"]);
+
+function getEvalHarnessReasoningEffort(): LlmEvalReasoningEffort {
+  const effort = process.env.OPENAI_EVAL_REASONING_EFFORT;
+  return effort ? parseReasoningEffort(effort) : DEFAULT_EVAL_REASONING_EFFORT;
+}
 
 export function getNewPromptInstructions() {
   return SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT;
@@ -382,6 +407,11 @@ function parseServiceTier(value: string): LlmEvalServiceTier {
     return value as LlmEvalServiceTier;
   }
   throw new Error(`--service-tier must be one of ${Array.from(CLI_SERVICE_TIERS).join(", ")}`);
+}
+
+function parsePromptMode(value: string): PromptMode {
+  if (value === "old" || value === "new" || value === "both") return value;
+  throw new Error("--prompt must be one of old, new, both");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -459,6 +489,16 @@ export function selectCorpusRowsBySecuritySignalRisk(rows: CorpusRow[], enabled:
   });
 }
 
+export function selectCorpusRowsByReferenceClean(rows: CorpusRow[], enabled: boolean) {
+  if (!enabled) return rows;
+  return rows.filter((row) => normalizeReferenceVerdict(row).verdict === "benign");
+}
+
+export function selectCorpusRowsBySkillTesterPass(rows: CorpusRow[], enabled: boolean) {
+  if (!enabled) return rows;
+  return rows.filter((row) => normalizeReferenceVerdict(row).skillTesterVerdict === "benign");
+}
+
 function timestampFromRow(row: CorpusRow) {
   const raw = firstString(
     row.securitySignals.timestamps.evaluation_timestamp,
@@ -482,11 +522,35 @@ function scoreFromRow(row: CorpusRow) {
   );
 }
 
+function verdictFromSecurityLevel(securityLevel: string | undefined): NormalizedVerdict {
+  if (!securityLevel) return "unknown";
+  const label = securityLevel.toLowerCase().trim();
+  if (
+    /\b(malicious|dangerous|critical|severe|failed|fail)\b/.test(label) ||
+    /\b(high|critical)\s+(risk|severity)\b/.test(label)
+  ) {
+    return "malicious";
+  }
+  if (/\b(suspicious|warning|caution|cautious|risky|moderate|review)\b/.test(label)) {
+    return "suspicious";
+  }
+  if (/\b(benign|safe|clean|secure|passed|pass|excellent|good)\b/.test(label)) {
+    return "benign";
+  }
+  if (/^high(?:\s+security)?$/.test(label)) return "benign";
+  if (/^medium(?:\s+security)?$/.test(label)) return "suspicious";
+  if (/^low(?:\s+security)?$/.test(label)) return "malicious";
+  return "unknown";
+}
+
 export function normalizeReferenceVerdict(row: CorpusRow): {
   verdict: NormalizedVerdict;
   basis: ReferenceBasis;
   securityLevel?: string;
   securityScore?: number;
+  source?: string | null;
+  moderationConsensusVerdict?: NormalizedVerdict;
+  skillTesterVerdict?: NormalizedVerdict;
 } {
   const securityLevel = firstString(
     row.reference_labels.security_level,
@@ -495,43 +559,77 @@ export function normalizeReferenceVerdict(row: CorpusRow): {
     row.securitySignals.summary.security_level,
   );
   const securityScore = scoreFromRow(row);
+  const moderationConsensusVerdict = verdictFromSecurityLevel(
+    firstString(row.reference_labels.moderation_consensus_level),
+  );
+  const skillTesterVerdict = verdictFromSecurityLevel(
+    firstString(
+      row.reference_labels.skilltester_security_level,
+      row.securitySignals.security.level,
+      row.securitySignals.scores.security_level,
+      row.securitySignals.summary.security_level,
+    ),
+  );
+  const source = row.reference_labels.source;
 
   if (securityLevel) {
-    const label = securityLevel.toLowerCase().trim();
-    if (
-      /\b(malicious|dangerous|critical|severe|failed|fail)\b/.test(label) ||
-      /\b(high|critical)\s+(risk|severity)\b/.test(label)
-    ) {
-      return { verdict: "malicious", basis: "level", securityLevel, securityScore };
-    }
-    if (/\b(suspicious|warning|caution|cautious|risky|moderate|review)\b/.test(label)) {
-      return { verdict: "suspicious", basis: "level", securityLevel, securityScore };
-    }
-    if (/\b(benign|safe|clean|secure|passed|pass|excellent|good)\b/.test(label)) {
-      return { verdict: "benign", basis: "level", securityLevel, securityScore };
-    }
-    if (/^high(?:\s+security)?$/.test(label)) {
-      return { verdict: "benign", basis: "level", securityLevel, securityScore };
-    }
-    if (/^medium(?:\s+security)?$/.test(label)) {
-      return { verdict: "suspicious", basis: "level", securityLevel, securityScore };
-    }
-    if (/^low(?:\s+security)?$/.test(label)) {
-      return { verdict: "malicious", basis: "level", securityLevel, securityScore };
+    const verdict = verdictFromSecurityLevel(securityLevel);
+    if (verdict !== "unknown") {
+      return {
+        verdict,
+        basis: "level",
+        securityLevel,
+        securityScore,
+        source,
+        moderationConsensusVerdict,
+        skillTesterVerdict,
+      };
     }
   }
 
   if (typeof securityScore === "number") {
     if (securityScore >= 80) {
-      return { verdict: "benign", basis: "score", securityLevel, securityScore };
+      return {
+        verdict: "benign",
+        basis: "score",
+        securityLevel,
+        securityScore,
+        source,
+        moderationConsensusVerdict,
+        skillTesterVerdict,
+      };
     }
     if (securityScore >= 50) {
-      return { verdict: "suspicious", basis: "score", securityLevel, securityScore };
+      return {
+        verdict: "suspicious",
+        basis: "score",
+        securityLevel,
+        securityScore,
+        source,
+        moderationConsensusVerdict,
+        skillTesterVerdict,
+      };
     }
-    return { verdict: "malicious", basis: "score", securityLevel, securityScore };
+    return {
+      verdict: "malicious",
+      basis: "score",
+      securityLevel,
+      securityScore,
+      source,
+      moderationConsensusVerdict,
+      skillTesterVerdict,
+    };
   }
 
-  return { verdict: "unknown", basis: "unknown", securityLevel, securityScore };
+  return {
+    verdict: "unknown",
+    basis: "unknown",
+    securityLevel,
+    securityScore,
+    source,
+    moderationConsensusVerdict,
+    skillTesterVerdict,
+  };
 }
 
 export async function readCorpusJsonl(corpusFile: string): Promise<CorpusRow[]> {
@@ -554,12 +652,56 @@ export async function readCorpusJsonl(corpusFile: string): Promise<CorpusRow[]> 
     });
 }
 
-function normalizedHfLabel(row: HfSecuritySignalsRow): NormalizedVerdict {
-  const label = firstString(row.label, row.metadata?.label?.source)?.toLowerCase();
+export async function readHfJsonl(
+  hfJsonlFile: string,
+  split = DEFAULT_HF_SPLIT,
+): Promise<CorpusRow[]> {
+  const text = await readFile(hfJsonlFile, "utf8");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      try {
+        return corpusRowFromHfSecuritySignalsRow(
+          JSON.parse(line) as HfSecuritySignalsRow,
+          index,
+          split,
+        );
+      } catch (error) {
+        throw new Error(
+          `Failed to parse ${hfJsonlFile}:${index + 1}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          { cause: error },
+        );
+      }
+    });
+}
+
+function normalizedLabelValue(value: string | null | undefined): NormalizedVerdict {
+  const label = value?.toLowerCase().trim();
   if (label === "clean" || label === "benign") return "benign";
   if (label === "suspicious") return "suspicious";
   if (label === "malicious") return "malicious";
   return "unknown";
+}
+
+function hfLabelBySource(
+  row: HfSecuritySignalsRow,
+  labelSource: string,
+): { verdict: NormalizedVerdict; riskScore?: number } {
+  const label = row.data?.labels?.find((entry) => entry.label_source === labelSource);
+  return {
+    verdict: normalizedLabelValue(firstString(label?.label, label?.raw_label)),
+    riskScore: asNumber(label?.score),
+  };
+}
+
+function normalizedHfLabel(row: HfSecuritySignalsRow): NormalizedVerdict {
+  const consensus = hfLabelBySource(row, "moderation_consensus").verdict;
+  if (consensus !== "unknown") return consensus;
+  return normalizedLabelValue(firstString(row.label, row.metadata?.label?.source));
 }
 
 function securityLevelForHfLabel(label: NormalizedVerdict): string | undefined {
@@ -576,16 +718,25 @@ function securityLevelForHfLabel(label: NormalizedVerdict): string | undefined {
   return undefined;
 }
 
+function securityScoreFromRiskScore(score: number | undefined): number | undefined {
+  if (score === undefined) return undefined;
+  if (score >= 0 && score <= 1) return Math.round((1 - score) * 1000) / 10;
+  return score;
+}
+
 function securityScoreForHfRow(
   row: HfSecuritySignalsRow,
   label: NormalizedVerdict,
 ): number | undefined {
-  const score =
+  const consensusScore = hfLabelBySource(row, "moderation_consensus").riskScore;
+  const riskScore =
+    consensusScore ??
     asNumber(row.score_consensus) ??
     asNumber(row.score_max) ??
     asNumber(row.score_llm) ??
     asNumber(row.score_static) ??
     asNumber(row.score_vt);
+  const score = securityScoreFromRiskScore(riskScore);
   if (score !== undefined) return score;
   switch (label) {
     case "benign":
@@ -606,9 +757,15 @@ export function corpusRowFromHfSecuritySignalsRow(
   split = DEFAULT_HF_SPLIT,
 ): CorpusRow {
   const source = row.metadata?.source ?? {};
+  const consensusLabel = hfLabelBySource(row, "moderation_consensus");
+  const skillTesterLabel = hfLabelBySource(row, "skilltester_security");
   const label = normalizedHfLabel(row);
+  const referenceSource =
+    consensusLabel.verdict !== "unknown" ? "moderation_consensus" : "row_label";
   const securityLevel = securityLevelForHfLabel(label);
   const securityScore = securityScoreForHfRow(row, label);
+  const consensusLevel = securityLevelForHfLabel(consensusLabel.verdict);
+  const skillTesterLevel = securityLevelForHfLabel(skillTesterLabel.verdict);
   const slug = firstString(source.public_slug, row.uuid, `hf-row-${index}`) ?? `hf-row-${index}`;
   const version = firstString(source.version) ?? "unknown";
   const skill = firstString(row.skill);
@@ -659,8 +816,13 @@ export function corpusRowFromHfSecuritySignalsRow(
       },
     },
     reference_labels: {
+      source: referenceSource,
       security_level: securityLevel,
       security_score: securityScore,
+      moderation_consensus_level: consensusLevel,
+      moderation_consensus_score: securityScoreFromRiskScore(consensusLabel.riskScore),
+      skilltester_security_level: skillTesterLevel,
+      skilltester_security_score: securityScoreFromRiskScore(skillTesterLabel.riskScore),
     },
   };
 }
@@ -746,8 +908,16 @@ async function loadRows(
   if (options.corpusFile) {
     return { rows: await readCorpusJsonl(options.corpusFile), source: options.corpusFile };
   }
+  if (options.hfJsonlFile) {
+    return {
+      rows: await readHfJsonl(options.hfJsonlFile, options.hfSplit),
+      source: options.hfJsonlFile,
+    };
+  }
   if (!options.hfDataset) {
-    throw new Error(`Set ${HF_DATASET_ENV_VAR}, pass --hf-dataset <id>, or pass --corpus <path>.`);
+    throw new Error(
+      `Set ${HF_DATASET_ENV_VAR}, pass --hf-dataset <id>, --hf-jsonl <path>, or --corpus <path>.`,
+    );
   }
   const fetchAll = Boolean(options.targets?.length) || options.limit === undefined;
   const rows = await fetchHfSecuritySignalsRows({
@@ -1090,6 +1260,18 @@ function summarizePromptRun(kind: PromptKind, result: PromptRunResult): PromptRu
   };
 }
 
+function skippedPromptRun(kind: PromptKind): PromptRunSummary {
+  return {
+    prompt: kind,
+    parseOk: false,
+    skipped: true,
+    cache: "disabled",
+    unsupportedRuntimeClaims: [],
+    evidenceQuality: assessEvidenceQuality(null),
+    asiFindings: [],
+  };
+}
+
 function rowId(row: CorpusRow) {
   const owner = row.resolved.owner ?? "unknown-owner";
   const slug = row.resolved.slug ?? row.securitySignals.summary.skill_name ?? "unknown-skill";
@@ -1110,35 +1292,42 @@ export async function compareRow(
   const oldInput = assembleEvalUserMessage(context);
   const newInput = assembleSkillEvalUserMessage(context);
   const newInstructions = getNewPromptInstructions();
+  const promptMode = options.promptMode ?? "new";
+  const runOld = promptMode === "old" || promptMode === "both";
+  const runNew = promptMode === "new" || promptMode === "both";
   const [oldResult, newResult] = await Promise.all([
-    runner({
-      kind: "old",
-      row,
-      context,
-      model: options.model,
-      reasoningEffort: options.reasoningEffort,
-      serviceTier: options.serviceTier ?? getLlmEvalServiceTier(),
-      instructions: LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
-      input: oldInput,
-      cacheDir: options.cacheDir,
-      useCache: options.useCache,
-    }),
-    runner({
-      kind: "new",
-      row,
-      context,
-      model: options.model,
-      reasoningEffort: options.reasoningEffort,
-      serviceTier: options.serviceTier ?? getLlmEvalServiceTier(),
-      instructions: newInstructions,
-      input: newInput,
-      cacheDir: options.cacheDir,
-      useCache: options.useCache,
-    }),
+    runOld
+      ? runner({
+          kind: "old",
+          row,
+          context,
+          model: options.model,
+          reasoningEffort: options.reasoningEffort,
+          serviceTier: options.serviceTier ?? getLlmEvalServiceTier(),
+          instructions: LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
+          input: oldInput,
+          cacheDir: options.cacheDir,
+          useCache: options.useCache,
+        })
+      : Promise.resolve(null),
+    runNew
+      ? runner({
+          kind: "new",
+          row,
+          context,
+          model: options.model,
+          reasoningEffort: options.reasoningEffort,
+          serviceTier: options.serviceTier ?? getLlmEvalServiceTier(),
+          instructions: newInstructions,
+          input: newInput,
+          cacheDir: options.cacheDir,
+          useCache: options.useCache,
+        })
+      : Promise.resolve(null),
   ]);
 
-  const oldSummary = summarizePromptRun("old", oldResult);
-  const newSummary = summarizePromptRun("new", newResult);
+  const oldSummary = oldResult ? summarizePromptRun("old", oldResult) : skippedPromptRun("old");
+  const newSummary = newResult ? summarizePromptRun("new", newResult) : skippedPromptRun("new");
   return {
     id: rowId(row),
     slug: context.slug,
@@ -1171,8 +1360,9 @@ function addEvidenceQuality(a: EvidenceQuality, b: EvidenceQuality) {
 }
 
 function buildPromptMetrics(rows: RowComparison[], prompt: PromptKind): PromptMetrics {
-  const promptRows = rows.map((row) => row[prompt]);
-  const referenceRows = rows.filter((row) => row.reference.verdict !== "unknown");
+  const promptRows = rows.map((row) => row[prompt]).filter((row) => !row.skipped);
+  const activeRows = rows.filter((row) => !row[prompt].skipped);
+  const referenceRows = activeRows.filter((row) => row.reference.verdict !== "unknown");
   const riskyReferenceRows = referenceRows.filter((row) => row.reference.verdict !== "benign");
   const matchesReference = referenceRows.filter(
     (row) => row[prompt].verdict === row.reference.verdict,
@@ -1183,6 +1373,12 @@ function buildPromptMetrics(rows: RowComparison[], prompt: PromptKind): PromptMe
   const falsePositivesOnBenign = referenceRows.filter(
     (row) =>
       row.reference.verdict === "benign" && row[prompt].verdict && row[prompt].verdict !== "benign",
+  ).length;
+  const skillTesterPassRows = activeRows.filter(
+    (row) => row.reference.skillTesterVerdict === "benign",
+  );
+  const falsePositivesOnSkillTesterPass = skillTesterPassRows.filter(
+    (row) => row[prompt].verdict && row[prompt].verdict !== "benign",
   ).length;
   const verdicts = {
     benign: promptRows.filter((row) => row.verdict === "benign").length,
@@ -1205,6 +1401,8 @@ function buildPromptMetrics(rows: RowComparison[], prompt: PromptKind): PromptMe
     riskyReferenceRecall:
       riskyReferenceRows.length > 0 ? riskyReferenceDetected / riskyReferenceRows.length : null,
     falsePositivesOnBenign,
+    skillTesterPassRows: skillTesterPassRows.length,
+    falsePositivesOnSkillTesterPass,
     verdicts,
     evidenceQuality,
   };
@@ -1461,6 +1659,7 @@ export function buildEvalReport(params: {
   model: string;
   reasoningEffort: LlmEvalReasoningEffort;
   serviceTier: LlmEvalServiceTier;
+  promptMode: PromptMode;
   concurrency: number;
   totalRows: number;
   rows: RowComparison[];
@@ -1489,6 +1688,7 @@ export function buildEvalReport(params: {
     model: params.model,
     reasoningEffort: params.reasoningEffort,
     serviceTier: params.serviceTier,
+    promptMode: params.promptMode,
     concurrency: params.concurrency,
     counts: {
       corpusRows: params.totalRows,
@@ -1576,6 +1776,7 @@ function generateMarkdownReport(report: EvalReport) {
     `Model: ${report.model}`,
     `Reasoning effort: ${report.reasoningEffort}`,
     `Service tier: ${report.serviceTier}`,
+    `Prompt mode: ${report.promptMode}`,
     `Concurrency: ${report.concurrency}`,
     "",
     "## Summary",
@@ -1588,18 +1789,22 @@ function generateMarkdownReport(report: EvalReport) {
     "",
     "## Reference Comparison",
     "",
-    "| Prompt | Parsed | Parse failures | Accuracy | Risky recall | False positives on benign | Runtime claim rows |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Prompt | Parsed | Parse failures | Accuracy | Risky recall | False positives on benign | FP on SkillTester pass | Runtime claim rows |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     `| Old | ${oldMetrics.parsed} | ${oldMetrics.parseFailures} | ${formatPercent(
       oldMetrics.referenceAccuracy,
     )} | ${formatPercent(oldMetrics.riskyReferenceRecall)} | ${
       oldMetrics.falsePositivesOnBenign
-    } | ${oldMetrics.unsupportedRuntimeClaimRows} |`,
+    } | ${oldMetrics.falsePositivesOnSkillTesterPass}/${oldMetrics.skillTesterPassRows} | ${
+      oldMetrics.unsupportedRuntimeClaimRows
+    } |`,
     `| New | ${newMetrics.parsed} | ${newMetrics.parseFailures} | ${formatPercent(
       newMetrics.referenceAccuracy,
     )} | ${formatPercent(newMetrics.riskyReferenceRecall)} | ${
       newMetrics.falsePositivesOnBenign
-    } | ${newMetrics.unsupportedRuntimeClaimRows} |`,
+    } | ${newMetrics.falsePositivesOnSkillTesterPass}/${newMetrics.skillTesterPassRows} | ${
+      newMetrics.unsupportedRuntimeClaimRows
+    } |`,
     "",
     "## Evidence Quality",
     "",
@@ -1694,14 +1899,22 @@ export async function runComparison(
   const allRows = input.rows;
   const corpusSchemaVersion = firstString(...allRows.map((row) => row.schema_version));
   const targetedRows = selectCorpusRowsByTargets(allRows, options.targets ?? []);
-  const referenceFilteredRows = selectCorpusRowsBySecuritySignalRisk(
+  const referenceRiskFilteredRows = selectCorpusRowsBySecuritySignalRisk(
     targetedRows,
     options.securitySignalsRiskyOnly ?? false,
   );
+  const referenceCleanFilteredRows = selectCorpusRowsByReferenceClean(
+    referenceRiskFilteredRows,
+    options.referenceCleanOnly ?? false,
+  );
+  const referenceFilteredRows = selectCorpusRowsBySkillTesterPass(
+    referenceCleanFilteredRows,
+    options.skilltesterPassOnly ?? false,
+  );
   const rows =
     typeof options.limit === "number"
-      ? referenceFilteredRows.slice(0, options.limit)
-      : referenceFilteredRows;
+      ? referenceFilteredRows.slice(options.offset ?? 0, (options.offset ?? 0) + options.limit)
+      : referenceFilteredRows.slice(options.offset ?? 0);
   const concurrency = Math.max(1, Math.floor(options.concurrency ?? DEFAULT_CONCURRENCY));
   const serviceTier = options.serviceTier ?? getLlmEvalServiceTier();
   const skipped: SkippedRow[] = [];
@@ -1731,6 +1944,7 @@ export async function runComparison(
     model: options.model,
     reasoningEffort: options.reasoningEffort,
     serviceTier,
+    promptMode: options.promptMode ?? "new",
     concurrency,
     totalRows: rows.length,
     rows: comparisons,
@@ -1751,20 +1965,27 @@ function printHelp() {
 
 Options:
   --corpus <path>       Local ClawHub security signals corpus JSONL path. When omitted, loads HF ${HF_DATASET_ENV_VAR}/${DEFAULT_HF_SPLIT}.
+  --hf-jsonl <path>     Local Hugging Face viewer JSONL path, converted with moderation_consensus as the primary reference.
   --hf-dataset <id>     Hugging Face dataset id (default: ${HF_DATASET_ENV_VAR})
   --hf-config <name>    Hugging Face dataset config (default: ${DEFAULT_HF_CONFIG})
   --hf-split <name>     Hugging Face split: train, validation, test, or eval_holdout (default: ${DEFAULT_HF_SPLIT})
   --output-dir <path>   Report output directory (default: ${DEFAULT_OUTPUT_DIR})
   --cache-dir <path>    Prompt response cache directory (default: ${DEFAULT_CACHE_DIR})
   --limit <n>           Evaluate only the first n corpus rows
+  --offset <n>          Skip the first n rows after filtering and targeting
   --concurrency <n>     Number of corpus rows to evaluate at once (default: ${DEFAULT_CONCURRENCY})
+  --prompt <mode>       Prompt(s) to run: new, old, or both (default: new)
   --target <id>         Evaluate matching corpus row(s). Repeatable.
                         Matches owner/slug@version, owner/slug, slug@version, slug, security signal skill_name, or source URL.
   --risky-only
                         Evaluate only rows ClawHub security signals labels suspicious/malicious or scores below 80
+  --reference-clean-only
+                        Evaluate only rows whose primary reference verdict is benign
+  --skilltester-pass-only
+                        Evaluate only rows whose SkillTester reference verdict is benign/pass
   --model <name>        OpenAI model (default: OPENAI_EVAL_MODEL or ${getLlmEvalModel()})
   --reasoning-effort <effort>
-                        Reasoning effort (default: OPENAI_EVAL_REASONING_EFFORT or ${getLlmEvalReasoningEffort()})
+                        Reasoning effort (default: OPENAI_EVAL_REASONING_EFFORT or ${DEFAULT_EVAL_REASONING_EFFORT})
   --service-tier <tier> OpenAI Responses service tier: auto, default, flex, or priority (default: OPENAI_EVAL_SERVICE_TIER or ${getLlmEvalServiceTier()})
   --no-cache            Disable response cache
   --mock                Use deterministic mock prompt outputs; no API calls
@@ -1776,15 +1997,18 @@ Options:
 export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     corpusFile: null,
+    hfJsonlFile: null,
     hfDataset: process.env[HF_DATASET_ENV_VAR] ?? null,
     hfConfig: DEFAULT_HF_CONFIG,
     hfSplit: DEFAULT_HF_SPLIT,
     outputDir: DEFAULT_OUTPUT_DIR,
     cacheDir: DEFAULT_CACHE_DIR,
     model: getLlmEvalModel(),
-    reasoningEffort: getLlmEvalReasoningEffort(),
+    reasoningEffort: getEvalHarnessReasoningEffort(),
     serviceTier: getLlmEvalServiceTier(),
+    promptMode: "new",
     concurrency: DEFAULT_CONCURRENCY,
+    offset: 0,
     targets: [],
     securitySignalsRiskyOnly: false,
     useCache: true,
@@ -1799,6 +2023,12 @@ export function parseArgs(argv: string[]): CliOptions {
       case "--corpus":
         if (!next) throw new Error("--corpus requires a path");
         options.corpusFile = next;
+        i += 1;
+        break;
+      case "--hf-jsonl":
+      case "--hf-local-jsonl":
+        if (!next) throw new Error(`${arg} requires a path`);
+        options.hfJsonlFile = next;
         i += 1;
         break;
       case "--hf-dataset":
@@ -1835,12 +2065,26 @@ export function parseArgs(argv: string[]): CliOptions {
         }
         i += 1;
         break;
+      case "--offset":
+        if (!next) throw new Error("--offset requires a number");
+        options.offset = Number.parseInt(next, 10);
+        if (!Number.isFinite(options.offset) || options.offset < 0) {
+          throw new Error("--offset must be a non-negative integer");
+        }
+        i += 1;
+        break;
       case "--concurrency":
         if (!next) throw new Error("--concurrency requires a number");
         options.concurrency = Number.parseInt(next, 10);
         if (!Number.isFinite(options.concurrency) || options.concurrency < 1) {
           throw new Error("--concurrency must be a positive integer");
         }
+        i += 1;
+        break;
+      case "--prompt":
+      case "--prompt-mode":
+        if (!next) throw new Error(`${arg} requires a prompt mode`);
+        options.promptMode = parsePromptMode(next);
         i += 1;
         break;
       case "--target":
@@ -1854,6 +2098,14 @@ export function parseArgs(argv: string[]): CliOptions {
       case "--security-signals-risky-only":
       case "--reference-risky-only":
         options.securitySignalsRiskyOnly = true;
+        break;
+      case "--reference-clean-only":
+      case "--clean-only":
+        options.referenceCleanOnly = true;
+        break;
+      case "--skilltester-pass-only":
+      case "--pass-only":
+        options.skilltesterPassOnly = true;
         break;
       case "--model":
         if (!next) throw new Error("--model requires a model name");
@@ -1903,6 +2155,7 @@ async function main() {
         model: report.model,
         reasoningEffort: report.reasoningEffort,
         serviceTier: report.serviceTier,
+        promptMode: report.promptMode,
         concurrency: report.concurrency,
         old: report.prompts.old.metrics,
         new: report.prompts.new.metrics,

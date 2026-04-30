@@ -8,6 +8,7 @@ import {
   corpusRowFromHfSecuritySignalsRow,
   parseArgs,
   readCorpusJsonl,
+  readHfJsonl,
   runComparison,
   type CorpusRow,
 } from "./clawscan-security-signals";
@@ -72,10 +73,16 @@ describe("clawscan security signals eval", () => {
       "/tmp/clawscan-cache",
       "--limit",
       "2",
+      "--offset",
+      "8",
       "--concurrency",
       "3",
+      "--prompt",
+      "both",
       "--hf-split",
       "eval_holdout",
+      "--hf-jsonl",
+      "/tmp/hf-train.jsonl",
       "--target",
       "openclaw/demo-skill@1.0.0",
       "--mock",
@@ -85,8 +92,11 @@ describe("clawscan security signals eval", () => {
     expect(parsed.outputDir).toBe("/tmp/clawscan-results");
     expect(parsed.cacheDir).toBe("/tmp/clawscan-cache");
     expect(parsed.limit).toBe(2);
+    expect(parsed.offset).toBe(8);
     expect(parsed.concurrency).toBe(3);
+    expect(parsed.promptMode).toBe("both");
     expect(parsed.hfSplit).toBe("eval_holdout");
+    expect(parsed.hfJsonlFile).toBe("/tmp/hf-train.jsonl");
     expect(parsed.targets).toEqual(["openclaw/demo-skill@1.0.0"]);
     expect(parsed.mock).toBe(true);
   });
@@ -174,6 +184,7 @@ describe("clawscan security signals eval", () => {
 
     const report = await runComparison({
       corpusFile: "/unused/corpus.jsonl",
+      hfJsonlFile: null,
       hfDataset: "example/private-dataset",
       hfConfig: "default",
       hfSplit: "eval_holdout",
@@ -183,6 +194,7 @@ describe("clawscan security signals eval", () => {
       reasoningEffort: "xhigh",
       serviceTier: "priority",
       concurrency: 1,
+      promptMode: "both",
       useCache: false,
       mock: true,
       writeReports: false,
@@ -204,5 +216,107 @@ describe("clawscan security signals eval", () => {
       slug: "missing-skill",
       reason: "not found in source repo",
     });
+  });
+
+  it("uses moderation_consensus before top-level labels for local HF rows", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-hf-jsonl-"));
+    const hfJsonl = join(root, "train.jsonl");
+    await writeFile(
+      hfJsonl,
+      `${JSON.stringify({
+        uuid: "row-1",
+        skill: "---\nname: HF Skill\n---\nUse the skill carefully.",
+        label: "suspicious",
+        score_consensus: 0,
+        has_skilltester: true,
+        data: {
+          labels: [
+            {
+              label: "clean",
+              label_source: "moderation_consensus",
+              raw_label: "clean",
+              score: 0,
+            },
+            {
+              label: "clean",
+              label_source: "skilltester_security",
+              raw_label: "clean",
+              score: 0,
+            },
+          ],
+        },
+        metadata: {
+          source: {
+            source_table: "skillVersions",
+            public_name: "HF Skill",
+            public_slug: "hf-skill",
+            version: "1.2.3",
+            created_at: "2026-04-30T00:00:00Z",
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    const rows = await readHfJsonl(hfJsonl, "train");
+
+    expect(rows[0]).toMatchObject({
+      reference_labels: {
+        source: "moderation_consensus",
+        security_level: "high security",
+        security_score: 100,
+        moderation_consensus_level: "high security",
+        skilltester_security_level: "high security",
+      },
+    });
+  });
+
+  it("tracks false positives on SkillTester pass rows", async () => {
+    const row = corpusRow({
+      reference_labels: {
+        source: "moderation_consensus",
+        security_level: "high security",
+        security_score: 100,
+        moderation_consensus_level: "high security",
+        skilltester_security_level: "high security",
+      },
+    });
+
+    const report = await runComparison(
+      {
+        corpusFile: null,
+        hfJsonlFile: null,
+        hfDataset: null,
+        hfConfig: "default",
+        hfSplit: "eval_holdout",
+        outputDir: "/unused/results",
+        cacheDir: "/unused/cache",
+        model: "gpt-5.5",
+        reasoningEffort: "xhigh",
+        serviceTier: "priority",
+        concurrency: 1,
+        useCache: false,
+        mock: false,
+        writeReports: false,
+        rows: [row],
+      },
+      async (request) => ({
+        cache: "disabled",
+        raw: JSON.stringify({
+          verdict: request.kind === "new" ? "suspicious" : "benign",
+          confidence: "medium",
+          summary: "Synthetic harness result.",
+          dimensions: {
+            purpose_capability: { status: "ok", detail: "Synthetic output." },
+          },
+          user_guidance: "Synthetic output.",
+        }),
+      }),
+    );
+
+    expect(report.prompts.new.metrics.falsePositivesOnBenign).toBe(1);
+    expect(report.prompts.new.metrics.skillTesterPassRows).toBe(1);
+    expect(report.prompts.new.metrics.falsePositivesOnSkillTesterPass).toBe(1);
+    expect(report.prompts.old.metrics.falsePositivesOnSkillTesterPass).toBe(0);
   });
 });
