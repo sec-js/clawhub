@@ -5,6 +5,7 @@
 # If you add overlapping rules below the secops block, include @openclaw/openclaw-secops
 # on those entries too or you can silently remove required secops review.
 # Security-sensitive code, config, workflows, and docs require secops review.
+/.github/codeql/ @openclaw/openclaw-secops
 /.github/workflows/ @openclaw/openclaw-secops
 /scripts/check-staged-secrets.mjs @openclaw/openclaw-secops
 /scripts/clawhub-cli-npm-publish.sh @openclaw/openclaw-secops
