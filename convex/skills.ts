@@ -1107,6 +1107,22 @@ type StaffSkillAuditLogEntry = Doc<"auditLogs"> & {
   actor: ReturnType<typeof toPublicUser> | null;
 };
 
+async function loadPublicSkillReference(ctx: QueryCtx, skillId: Id<"skills"> | null | undefined) {
+  if (!skillId) return null;
+  const skill = await ctx.db.get(skillId);
+  if (!isPublicSkillDoc(skill)) return null;
+
+  const owner = toPublicPublisher(
+    await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    }),
+  );
+  if (!owner) return null;
+
+  return { skill, owner };
+}
+
 type PublicSkillListVersion = Pick<
   Doc<"skillVersions">,
   "_id" | "_creationTime" | "version" | "createdAt" | "changelog" | "changelogSource"
@@ -1591,21 +1607,8 @@ export const getBySlug = query({
     if (!owner) return null;
     const badges = await getSkillBadgeMap(ctx, skill._id);
 
-    const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null;
-    const forkOfOwner = forkOfSkill
-      ? await getOwnerPublisher(ctx, {
-          ownerPublisherId: forkOfSkill.ownerPublisherId,
-          ownerUserId: forkOfSkill.ownerUserId,
-        })
-      : null;
-
-    const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null;
-    const canonicalOwner = canonicalSkill
-      ? await getOwnerPublisher(ctx, {
-          ownerPublisherId: canonicalSkill.ownerPublisherId,
-          ownerUserId: canonicalSkill.ownerUserId,
-        })
-      : null;
+    const forkOf = await loadPublicSkillReference(ctx, skill.forkOf?.skillId);
+    const canonical = await loadPublicSkillReference(ctx, skill.canonicalSkillId);
 
     const publicSkill = toPublicSkill({ ...skill, badges });
 
@@ -1640,6 +1643,11 @@ export const getBySlug = query({
       createdAt: skill.createdAt,
       updatedAt: skill.updatedAt,
     };
+    const responseSkillData = {
+      ...skillData,
+      canonicalSkillId: canonical ? skillData.canonicalSkillId : undefined,
+      forkOf: forkOf ? skillData.forkOf : undefined,
+    };
 
     // Moderation info - visible to owners for all states, or anyone for flagged skills (transparency)
     const showModerationInfo = isOwner || isMalwareBlocked || isSuspicious || overrideActive;
@@ -1667,34 +1675,34 @@ export const getBySlug = query({
     return {
       requestedSlug: resolved.requestedSlug,
       resolvedSlug: resolved.resolvedSlug,
-      skill: skillData,
+      skill: responseSkillData,
       latestVersion,
       owner,
       pendingReview: isOwner && isPendingScan,
       moderationInfo,
-      forkOf: forkOfSkill
+      forkOf: forkOf
         ? {
             kind: skill.forkOf?.kind ?? "fork",
             version: skill.forkOf?.version ?? null,
             skill: {
-              slug: forkOfSkill.slug,
-              displayName: forkOfSkill.displayName,
+              slug: forkOf.skill.slug,
+              displayName: forkOf.skill.displayName,
             },
             owner: {
-              handle: forkOfOwner?.handle ?? null,
-              userId: forkOfOwner?.linkedUserId ?? null,
+              handle: forkOf.owner.handle ?? null,
+              userId: forkOf.owner.linkedUserId ?? null,
             },
           }
         : null,
-      canonical: canonicalSkill
+      canonical: canonical
         ? {
             skill: {
-              slug: canonicalSkill.slug,
-              displayName: canonicalSkill.displayName,
+              slug: canonical.skill.slug,
+              displayName: canonical.skill.displayName,
             },
             owner: {
-              handle: canonicalOwner?.handle ?? null,
-              userId: canonicalOwner?.linkedUserId ?? null,
+              handle: canonical.owner.handle ?? null,
+              userId: canonical.owner.linkedUserId ?? null,
             },
           }
         : null,
