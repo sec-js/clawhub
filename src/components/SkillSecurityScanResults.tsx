@@ -9,6 +9,39 @@ type LlmAnalysisDimension = {
   detail: string;
 };
 
+type AgenticRiskStatus = "none" | "note" | "concern";
+type ClawScanRiskBucket =
+  | "abnormal_behavior_control"
+  | "permission_boundary"
+  | "sensitive_data_protection";
+
+type LlmAgenticRiskEvidence = {
+  path: string;
+  snippet: string;
+  explanation: string;
+};
+
+type LlmAgenticRiskFinding = {
+  categoryId: string;
+  categoryLabel: string;
+  riskBucket: ClawScanRiskBucket;
+  supportingLens?: string;
+  status: AgenticRiskStatus;
+  severity: string;
+  confidence: string;
+  evidence?: LlmAgenticRiskEvidence;
+  userImpact: string;
+  recommendation: string;
+};
+
+type LlmRiskSummaryBucket = {
+  status: AgenticRiskStatus;
+  summary: string;
+  highestSeverity?: string;
+};
+
+type LlmRiskSummary = Record<ClawScanRiskBucket, LlmRiskSummaryBucket>;
+
 const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   crypto: "Crypto",
   "requires-wallet": "Requires wallet",
@@ -35,6 +68,8 @@ export type LlmAnalysis = {
   dimensions?: LlmAnalysisDimension[];
   guidance?: string;
   findings?: string;
+  agenticRiskFindings?: LlmAgenticRiskFinding[];
+  riskSummary?: LlmRiskSummary;
   model?: string;
   checkedAt: number;
 };
@@ -117,6 +152,169 @@ function getDimensionIcon(rating: string) {
   }
 }
 
+const CLAWSCAN_RISK_BUCKET_ORDER: ClawScanRiskBucket[] = [
+  "abnormal_behavior_control",
+  "permission_boundary",
+  "sensitive_data_protection",
+];
+
+const CLAWSCAN_RISK_BUCKET_LABELS: Record<ClawScanRiskBucket, string> = {
+  abnormal_behavior_control: "Abnormal behavior control",
+  permission_boundary: "Permission boundary",
+  sensitive_data_protection: "Sensitive data protection",
+};
+
+const AGENTIC_RISK_STATUS_LABELS: Record<AgenticRiskStatus, string> = {
+  none: "No evidence",
+  note: "Note",
+  concern: "Concern",
+};
+
+const SAFETEST_LENS_LABELS: Record<string, string> = {
+  "dangerous-calls": "Dangerous calls",
+  "dependency-risk": "Dependency risk",
+  "permission-boundary": "Permission boundary",
+  "sensitive-info-leak": "Sensitive information leak",
+  "social-engineering": "Social engineering",
+};
+
+function formatSecurityLabel(value?: string | null) {
+  if (!value) return null;
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function getRiskStatusClass(status: AgenticRiskStatus, severity?: string) {
+  if (status === "none") return "scan-status-clean";
+  if (status === "note") return "scan-status-pending";
+  const normalizedSeverity = severity?.toLowerCase();
+  if (normalizedSeverity === "critical" || normalizedSeverity === "high") {
+    return "scan-status-malicious";
+  }
+  return "scan-status-suspicious";
+}
+
+function getVisibleAgenticRiskFindings(analysis: LlmAnalysis) {
+  return (analysis.agenticRiskFindings ?? []).filter(
+    (finding) => (finding.status === "note" || finding.status === "concern") && finding.evidence,
+  );
+}
+
+export function hasClawScanRiskReview(analysis?: LlmAnalysis | null) {
+  if (!analysis) return false;
+  return Boolean(analysis.riskSummary || getVisibleAgenticRiskFindings(analysis).length > 0);
+}
+
+function RiskStatusBadge({ status, severity }: { status: AgenticRiskStatus; severity?: string }) {
+  return (
+    <span className={`scan-result-status ${getRiskStatusClass(status, severity)}`}>
+      {AGENTIC_RISK_STATUS_LABELS[status] ?? status}
+    </span>
+  );
+}
+
+export function ClawScanRiskReview({
+  analysis,
+  showTitle = true,
+}: {
+  analysis: LlmAnalysis;
+  showTitle?: boolean;
+}) {
+  const visibleFindings = getVisibleAgenticRiskFindings(analysis);
+  const hasRiskSummary = Boolean(analysis.riskSummary);
+  if (!hasRiskSummary && visibleFindings.length === 0) return null;
+
+  return (
+    <div className="clawscan-risk-review">
+      {showTitle ? <div className="scan-findings-title">Security Buckets</div> : null}
+      <p className="clawscan-scope-note">
+        Artifact-based informational review of SKILL.md, metadata, install specs, static scan
+        signals, and capability signals. ClawScan does not execute the skill or run runtime probes.
+      </p>
+      {analysis.riskSummary ? (
+        <div className="clawscan-risk-buckets">
+          {CLAWSCAN_RISK_BUCKET_ORDER.map((bucket) => {
+            const summary = analysis.riskSummary?.[bucket];
+            if (!summary) return null;
+            const highestSeverity = formatSecurityLabel(summary.highestSeverity);
+            return (
+              <div key={bucket} className="clawscan-risk-bucket">
+                <div className="clawscan-risk-bucket-header">
+                  <div className="clawscan-risk-bucket-label">
+                    {CLAWSCAN_RISK_BUCKET_LABELS[bucket]}
+                  </div>
+                  <RiskStatusBadge status={summary.status} severity={summary.highestSeverity} />
+                </div>
+                {highestSeverity && highestSeverity !== "None" ? (
+                  <div className="clawscan-risk-severity">Highest severity: {highestSeverity}</div>
+                ) : null}
+                {summary.summary ? (
+                  <p className="clawscan-risk-summary-text">{summary.summary}</p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {visibleFindings.length > 0 ? (
+        <div className="agentic-risk-findings">
+          <div className="scan-findings-title">Evidence-backed notes and concerns</div>
+          {visibleFindings.map((finding, index) => {
+            const evidence = finding.evidence;
+            if (!evidence) return null;
+            const lens = formatSecurityLabel(
+              finding.supportingLens
+                ? (SAFETEST_LENS_LABELS[finding.supportingLens] ?? finding.supportingLens)
+                : null,
+            );
+            const severity = formatSecurityLabel(finding.severity);
+            const confidence = formatSecurityLabel(finding.confidence);
+            return (
+              <div
+                key={`${finding.categoryId}-${finding.riskBucket}-${index}`}
+                className="agentic-risk-finding"
+              >
+                <div className="agentic-risk-finding-header">
+                  <div className="agentic-risk-finding-title">
+                    {CLAWSCAN_RISK_BUCKET_LABELS[finding.riskBucket]}
+                  </div>
+                  <RiskStatusBadge status={finding.status} severity={finding.severity} />
+                </div>
+                <div className="agentic-risk-finding-meta">
+                  {finding.categoryLabel}
+                  {severity ? ` - ${severity}` : ""}
+                  {confidence ? ` - ${confidence} confidence` : ""}
+                  {lens ? ` - ${lens}` : ""}
+                </div>
+                <div className="agentic-risk-evidence">
+                  <div className="agentic-risk-evidence-path">{evidence.path}</div>
+                  <pre className="agentic-risk-evidence-snippet">{evidence.snippet}</pre>
+                  <p className="agentic-risk-evidence-explanation">{evidence.explanation}</p>
+                </div>
+                {finding.userImpact ? (
+                  <div className="agentic-risk-impact">
+                    <span>User impact</span>
+                    {finding.userImpact}
+                  </div>
+                ) : null}
+                {finding.recommendation ? (
+                  <div className="agentic-risk-recommendation">
+                    <span>Recommendation</span>
+                    {finding.recommendation}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
   const verdict = analysis.verdict ?? analysis.status;
   const [isOpen, setIsOpen] = useState(false);
@@ -142,6 +340,7 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
         </span>
       </button>
       <div className="analysis-body">
+        <ClawScanRiskReview analysis={analysis} />
         {analysis.dimensions && analysis.dimensions.length > 0 ? (
           <div className="analysis-dimensions">
             {analysis.dimensions.map((dim) => {

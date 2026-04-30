@@ -13,11 +13,14 @@ import { extractResponseText } from "./lib/openaiResponse";
 import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
   assembleEvalUserMessage,
+  assembleSkillEvalUserMessage,
   detectInjectionPatterns,
   getLlmEvalModel,
+  getLlmEvalReasoningEffort,
+  LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   LLM_EVAL_MAX_OUTPUT_TOKENS,
   parseLlmEvalResponse,
-  SECURITY_EVALUATOR_SYSTEM_PROMPT,
+  SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "./lib/securityPrompt";
 
 const internalRefs = internal as unknown as {
@@ -77,6 +80,7 @@ export const evaluateWithLlm = internalAction({
     }
 
     const model = getLlmEvalModel();
+    const reasoningEffort = getLlmEvalReasoningEffort();
 
     // Store error helper
     const storeError = async (message: string) => {
@@ -174,10 +178,12 @@ export const evaluateWithLlm = internalAction({
       skillMdContent,
       fileContents,
       injectionSignals,
+      staticScan: version.staticScan,
+      capabilityTags: version.capabilityTags,
     };
 
     // 6. Assemble user message
-    const userMessage = assembleEvalUserMessage(evalCtx);
+    const userMessage = assembleSkillEvalUserMessage(evalCtx);
 
     // 7. Call OpenAI Responses API (with retry for rate limits)
     const MAX_RETRIES = 3;
@@ -185,8 +191,11 @@ export const evaluateWithLlm = internalAction({
     try {
       const body = JSON.stringify({
         model,
-        instructions: SECURITY_EVALUATOR_SYSTEM_PROMPT,
+        instructions: SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
         input: userMessage,
+        reasoning: {
+          effort: reasoningEffort,
+        },
         max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
         text: {
           format: {
@@ -259,6 +268,8 @@ export const evaluateWithLlm = internalAction({
         dimensions: result.dimensions,
         guidance: result.guidance,
         findings: result.findings || undefined,
+        agenticRiskFindings: result.agenticRiskFindings,
+        riskSummary: result.riskSummary,
         model,
         checkedAt: Date.now(),
       },
@@ -285,6 +296,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     const model = getLlmEvalModel();
+    const reasoningEffort = getLlmEvalReasoningEffort();
     const storeError = async (message: string) => {
       console.error(`[llmEval:package] ${message}`);
       await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
@@ -375,8 +387,11 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     try {
       const body = JSON.stringify({
         model,
-        instructions: SECURITY_EVALUATOR_SYSTEM_PROMPT,
+        instructions: LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
         input: userMessage,
+        reasoning: {
+          effort: reasoningEffort,
+        },
         max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
         text: {
           format: {

@@ -4854,6 +4854,59 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
       ),
       guidance: v.optional(v.string()),
       findings: v.optional(v.string()),
+      agenticRiskFindings: v.optional(
+        v.array(
+          v.object({
+            categoryId: v.string(),
+            categoryLabel: v.string(),
+            riskBucket: v.union(
+              v.literal("abnormal_behavior_control"),
+              v.literal("permission_boundary"),
+              v.literal("sensitive_data_protection"),
+            ),
+            supportingLens: v.optional(
+              v.union(
+                v.literal("dangerous-calls"),
+                v.literal("dependency-risk"),
+                v.literal("permission-boundary"),
+                v.literal("sensitive-info-leak"),
+                v.literal("social-engineering"),
+              ),
+            ),
+            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+            severity: v.string(),
+            confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+            evidence: v.optional(
+              v.object({
+                path: v.string(),
+                snippet: v.string(),
+                explanation: v.string(),
+              }),
+            ),
+            userImpact: v.string(),
+            recommendation: v.string(),
+          }),
+        ),
+      ),
+      riskSummary: v.optional(
+        v.object({
+          abnormal_behavior_control: v.object({
+            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+            summary: v.string(),
+            highestSeverity: v.optional(v.string()),
+          }),
+          permission_boundary: v.object({
+            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+            summary: v.string(),
+            highestSeverity: v.optional(v.string()),
+          }),
+          sensitive_data_protection: v.object({
+            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+            summary: v.string(),
+            highestSeverity: v.optional(v.string()),
+          }),
+        }),
+      ),
       model: v.optional(v.string()),
       checkedAt: v.number(),
     }),

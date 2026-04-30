@@ -2,7 +2,9 @@ import { ArrowLeft, Clock, ExternalLink, Fingerprint } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  ClawScanRiskReview,
   getScanStatusInfo,
+  hasClawScanRiskReview,
   type LlmAnalysis,
   type StaticFinding,
   type VtAnalysis,
@@ -70,7 +72,8 @@ function formatValue(value: unknown): string | null {
   if (value === undefined || value === null || value === "") return null;
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return value.length ? value.map(formatValue).filter(Boolean).join(", ") : null;
+  if (Array.isArray(value))
+    return value.length ? value.map(formatValue).filter(Boolean).join(", ") : null;
   return JSON.stringify(value);
 }
 
@@ -85,8 +88,10 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 }
 
 function getScannerStatus(props: SecurityScannerPageProps) {
-  if (props.scanner === "virustotal") return props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "pending";
-  if (props.scanner === "openclaw") return props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "pending";
+  if (props.scanner === "virustotal")
+    return props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "pending";
+  if (props.scanner === "openclaw")
+    return props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "pending";
   return props.staticScan?.status ?? "pending";
 }
 
@@ -102,7 +107,9 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
   const statusInfo = getScanStatusInfo(status);
   const checkedAt = getCheckedAt(props);
   const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
-  const sourceRepo = formatValue(props.source?.repository ?? props.source?.repo ?? props.source?.url);
+  const sourceRepo = formatValue(
+    props.source?.repository ?? props.source?.repo ?? props.source?.url,
+  );
   const sourceCommit = formatValue(props.source?.commit ?? props.source?.sha);
 
   return (
@@ -119,7 +126,9 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge>{props.entity.kind === "skill" ? "Skill" : "Plugin"}</Badge>
-                {props.entity.version ? <Badge variant="compact">v{props.entity.version}</Badge> : null}
+                {props.entity.version ? (
+                  <Badge variant="compact">v{props.entity.version}</Badge>
+                ) : null}
               </div>
               <h1 className="m-0 break-words font-display text-3xl font-bold text-[color:var(--ink)]">
                 {label} security
@@ -160,9 +169,15 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                           "No artifact hash recorded."
                         )}
                       </DetailRow>
-                      <DetailRow label="Source">{props.vtAnalysis?.source ?? "File reputation"}</DetailRow>
-                      <DetailRow label="Verdict">{props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "Pending"}</DetailRow>
-                      <DetailRow label="Code Insight">{props.vtAnalysis?.analysis ?? null}</DetailRow>
+                      <DetailRow label="Source">
+                        {props.vtAnalysis?.source ?? "File reputation"}
+                      </DetailRow>
+                      <DetailRow label="Verdict">
+                        {props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "Pending"}
+                      </DetailRow>
+                      <DetailRow label="Code Insight">
+                        {props.vtAnalysis?.analysis ?? null}
+                      </DetailRow>
                       <DetailRow label="External report">
                         {vtUrl ? (
                           <a
@@ -183,10 +198,24 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
 
                   {props.scanner === "openclaw" ? (
                     <>
-                      <DetailRow label="Verdict">{props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "Pending"}</DetailRow>
-                      <DetailRow label="Confidence">{props.llmAnalysis?.confidence ?? "Not reported"}</DetailRow>
-                      <DetailRow label="Model">{props.llmAnalysis?.model ?? "Not reported"}</DetailRow>
-                      <DetailRow label="Summary">{props.llmAnalysis?.summary ?? "No ClawScan analysis has been recorded yet."}</DetailRow>
+                      <DetailRow label="Verdict">
+                        {props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "Pending"}
+                      </DetailRow>
+                      <DetailRow label="Confidence">
+                        {props.llmAnalysis?.confidence ?? "Not reported"}
+                      </DetailRow>
+                      <DetailRow label="Model">
+                        {props.llmAnalysis?.model ?? "Not reported"}
+                      </DetailRow>
+                      <DetailRow label="Review scope">
+                        Artifact-based informational review only. ClawScan reviews supplied
+                        artifacts and existing scan signals; it does not execute the skill or run
+                        runtime probes.
+                      </DetailRow>
+                      <DetailRow label="Summary">
+                        {props.llmAnalysis?.summary ??
+                          "No ClawScan analysis has been recorded yet."}
+                      </DetailRow>
                       <DetailRow label="Guidance">{props.llmAnalysis?.guidance ?? null}</DetailRow>
                       <DetailRow label="Findings">
                         {props.llmAnalysis?.findings ? (
@@ -201,7 +230,8 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                   {props.scanner === "static-analysis" ? (
                     <>
                       <DetailRow label="Summary">
-                        {props.staticScan?.summary ?? "No static analysis result has been recorded yet."}
+                        {props.staticScan?.summary ??
+                          "No static analysis result has been recorded yet."}
                       </DetailRow>
                       <DetailRow label="Reason codes">
                         {props.staticScan?.reasonCodes?.length ? (
@@ -216,17 +246,34 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                           "None"
                         )}
                       </DetailRow>
-                      <DetailRow label="Engine">{props.staticScan?.engineVersion ?? "Not reported"}</DetailRow>
+                      <DetailRow label="Engine">
+                        {props.staticScan?.engineVersion ?? "Not reported"}
+                      </DetailRow>
                     </>
                   ) : null}
 
                   <DetailRow label="Source repository">{sourceRepo}</DetailRow>
                   <DetailRow label="Source commit">
-                    {sourceCommit ? <span className="font-mono text-xs">{sourceCommit}</span> : null}
+                    {sourceCommit ? (
+                      <span className="font-mono text-xs">{sourceCommit}</span>
+                    ) : null}
                   </DetailRow>
                 </dl>
               </CardContent>
             </Card>
+
+            {props.scanner === "openclaw" &&
+            props.llmAnalysis &&
+            hasClawScanRiskReview(props.llmAnalysis) ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Security Buckets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ClawScanRiskReview analysis={props.llmAnalysis} showTitle={false} />
+                </CardContent>
+              </Card>
+            ) : null}
 
             {props.scanner === "openclaw" && props.llmAnalysis?.dimensions?.length ? (
               <Card>
@@ -292,7 +339,11 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                   <DetailRow label="Package">{props.entity.name}</DetailRow>
                   <DetailRow label="Version">{props.entity.version ?? "Latest"}</DetailRow>
                   <DetailRow label="Hash">
-                    {props.sha256hash ? <span className="break-all font-mono text-xs">{props.sha256hash}</span> : "Not recorded"}
+                    {props.sha256hash ? (
+                      <span className="break-all font-mono text-xs">{props.sha256hash}</span>
+                    ) : (
+                      "Not recorded"
+                    )}
                   </DetailRow>
                 </dl>
               </CardContent>
