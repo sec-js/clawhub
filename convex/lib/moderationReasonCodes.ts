@@ -12,7 +12,7 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.4.11";
+export const MODERATION_ENGINE_VERSION = "v2.4.12";
 
 export const REASON_CODES = {
   DANGEROUS_EXEC: "suspicious.dangerous_exec",

@@ -109,6 +109,10 @@ const SECRET_ARGV_REDACTION_PATTERN =
   /(\b(?:from-mnemonic|--(?:private-key|seed|seed-phrase|mnemonic|password|token))\s+)(["'`])([^"'`]{8,})\2/gi;
 const DYNAMIC_CODE_EXECUTION_PATTERN =
   /\beval\s*\(|new\s+Function\s*\(|\b(?:[A-Za-z_][A-Za-z0-9_]*\.)?loader\.exec_module\s*\(/;
+const SHELL_BASE64_FILE_READ_PATTERN =
+  /(?:\bcat\s+["']?\$[A-Za-z_][A-Za-z0-9_]*["']?\s*\|\s*base64\b|\bbase64\b[^\n]{0,80}["']?\$[A-Za-z_][A-Za-z0-9_]*["']?)/i;
+const SHELL_NETWORK_UPLOAD_PATTERN =
+  /\bcurl\b[\s\S]{0,1600}(?:--data(?:-binary|-raw)?\b|-d\b|--form\b|-F\b|--upload-file\b|Authorization\s*:)/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -405,6 +409,12 @@ function findDangerousChildProcessCall(content: string) {
   return null;
 }
 
+function findShellBase64FileUpload(content: string) {
+  if (!/\bcurl\b/i.test(content) || !/\bbase64\b/i.test(content)) return null;
+  if (!SHELL_NETWORK_UPLOAD_PATTERN.test(content)) return null;
+  return findFirstLine(content, SHELL_BASE64_FILE_READ_PATTERN);
+}
+
 function normalizeEnvName(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -592,6 +602,18 @@ function scanCodeFile(
       line: match.line,
       message: "File read combined with network send (possible exfiltration).",
       evidence: match.text,
+    });
+  }
+
+  const shellBase64FileUpload = findShellBase64FileUpload(content);
+  if (shellBase64FileUpload) {
+    addFinding(findings, {
+      code: REASON_CODES.EXFILTRATION,
+      severity: "critical",
+      file: path,
+      line: shellBase64FileUpload.line,
+      message: "Shell script base64-encodes a local file and sends it over the network.",
+      evidence: shellBase64FileUpload.text,
     });
   }
 

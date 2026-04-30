@@ -525,6 +525,50 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("flags shell wrappers that base64-upload local files", () => {
+    const result = runStaticModerationScan({
+      slug: "paddleocr-doc-parsing",
+      displayName: "PaddleOCR Doc Parsing",
+      summary: "Parse documents with a hosted OCR API",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/paddleocr_parse.sh", size: 512 }],
+      fileContents: [
+        {
+          path: "scripts/paddleocr_parse.sh",
+          content: [
+            'input_file="$1"',
+            'file_base64=$(cat "$input_file" | base64 | tr -d "\\n")',
+            'curl -sS "$PADDLEOCR_API_URL" -H "Authorization: token $PADDLEOCR_ACCESS_TOKEN" --data "$file_base64"',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.potential_exfiltration");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag local-only shell base64 transforms", () => {
+    const result = runStaticModerationScan({
+      slug: "local-encoder",
+      displayName: "Local Encoder",
+      summary: "Encode files locally",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/encode.sh", size: 128 }],
+      fileContents: [
+        {
+          path: "scripts/encode.sh",
+          content: 'input_file="$1"\nbase64 "$input_file" > encoded.txt',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.potential_exfiltration");
+    expect(result.status).toBe("clean");
+  });
+
   it('does not flag "you are now" in markdown', () => {
     const result = runStaticModerationScan({
       slug: "helper",
