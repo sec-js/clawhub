@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
+import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
 const REHYPE_PLUGINS = [rehypeProxyImages];
@@ -99,31 +100,32 @@ export function SkillDetailTabs({
         <div className="tab-body">
           {readmeContent ? (
             <div className="markdown">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={REHYPE_PLUGINS}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={REHYPE_PLUGINS}
+                urlTransform={(url, key) =>
+                  key === "href"
+                    ? resolveSkillReadmeHref(url, skill.slug)
+                    : defaultUrlTransform(url)
+                }
+              >
                 {readmeContent}
               </ReactMarkdown>
             </div>
           ) : readmeError ? (
             <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No README available</p>
-              <p className="empty-state-body">
-                This skill doesn't have a SKILL.md file yet.
-              </p>
+              <p className="empty-state-body">This skill doesn't have a SKILL.md file yet.</p>
             </div>
           ) : (
-            <div className="stat p-4">
-              Loading README...
-            </div>
+            <div className="stat p-4">Loading README...</div>
           )}
         </div>
       ) : null}
 
       {activeTab === "files" ? (
         <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
-          <SkillFilesPanel
-            versionId={latestVersionId}
-            latestFiles={latestFiles}
-          />
+          <SkillFilesPanel versionId={latestVersionId} latestFiles={latestFiles} />
         </Suspense>
       ) : null}
 

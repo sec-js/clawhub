@@ -27,6 +27,11 @@ const explicitIntentRules = [
       /\b(?:re[-\s]?classif(?:y|ication)|remove\s+(?:the\s+)?suspicious\s+flag|clear\s+(?:the\s+)?suspicious\s+flag|mark\s+(?:it\s+)?(?:as\s+)?(?:clean|benign))\b/i,
   },
   {
+    id: "false-positive-flag",
+    pattern:
+      /\b(?:false\s+positive|(?:incorrectly|wrongly|mistakenly)\s+(?:flagged|marked|classified)|(?:skill|plugin|package)\s+(?:flagged|marked)|(?:flagged|marked|classified)\s+(?:as\s+)?(?:sus?picious|malicious)|sus?picious\s+flag)\b/i,
+  },
+  {
     id: "review-after-fix",
     pattern:
       /\b(?:security\s+flag\s+review|scan\s+flag\s+review|(?:request(?:ing)?|please)\s+(?:a\s+)?(?:manual\s+)?(?:review|security\s+review)\b[\s\S]{0,120}\b(?:after|fix(?:ed|es|ing)?|updated?|metadata|current\s+version|latest\s+version|new\s+version)|review\s+request\b[\s\S]{0,120}\b(?:after|fix(?:ed|es|ing)?|updated?|metadata|current\s+version|latest\s+version|new\s+version))\b/i,
@@ -46,7 +51,7 @@ const moderationContextRules = [
   {
     id: "moderation-signal",
     pattern:
-      /\b(?:suspicious|flagged\s+(?:as\s+)?suspicious|security\s+scan|scanner|virustotal|vt\b|openclaw\s+verdict|moderation|malicious|benign|clean)\b/i,
+      /\b(?:sus?picious|flagged\s+(?:as\s+)?sus?picious|security\s+scan|scanner|virustotal|vt\b|openclaw\s+verdict|moderation|malicious|benign|clean)\b/i,
   },
 ];
 
@@ -177,7 +182,7 @@ export function classifyRescanRequest(issue) {
 
   const negativeMatches = matchingRuleIds(negativeContextRules, text);
   const hasStrongModerationLanguage =
-    /\b(?:suspicious|flagged|virustotal|vt\b|malicious|benign|clean|security\s+scan|scanner|moderation)\b/i.test(
+    /\b(?:sus?picious|flagged|virustotal|vt\b|malicious|benign|clean|security\s+scan|scanner|moderation)\b/i.test(
       text,
     );
   if (negativeMatches.length > 0 && !hasStrongModerationLanguage) {

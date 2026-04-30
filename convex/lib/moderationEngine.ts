@@ -65,6 +65,8 @@ const MARKDOWN_EXTENSION = /\.(md|markdown|mdx)$/i;
 const CODE_EXTENSION = /\.(js|ts|mjs|cjs|mts|cts|jsx|tsx|py|sh|bash|zsh|rb|go)$/i;
 const STANDARD_PORTS = new Set([80, 443, 8080, 8443, 3000]);
 const RAW_IP_URL_PATTERN = /https?:\/\/\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/|["'])/i;
+const CGNAT_HTTP_URL_PATTERN =
+  /http:\/\/100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}(?::\d+)?(?:\/[^\s"'`]*)?/i;
 const INSTALL_PACKAGE_PATTERN = /installer-package\s*:\s*https?:\/\/[^\s"'`]+/i;
 const GENERATED_SOURCE_PLACEHOLDER_PATTERN =
   /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*["']\$\{[A-Za-z_][A-Za-z0-9_-]*\}["']/m;
@@ -79,9 +81,86 @@ const DESTRUCTIVE_DELETE_PATTERN =
 const SHELL_POSITIONAL_ASSIGNMENT_PATTERN =
   /^\s*([A-Z_][A-Z0-9_]*)=(["']?)\$(?:[1-9][0-9]*|@|\*)\2\s*(?:#.*)?$/gm;
 const SECRET_ASSIGNMENT_PATTERN =
-  /\b(?:api[_\s-]?(?:secret|key)|secret[_\s-]?key|access[_\s-]?token|auth[_\s-]?token|bearer[_\s-]?token|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+  /\b(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key|token)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer(?:[_\s-]?token)?|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|(?:openrouter|supabase|storj)[_\s-]?(?:key|token|secret|access[_\s-]?grant)|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 const AUTH_HEADER_SECRET_PATTERN =
   /\b(?:authorization|x-api-key|x-api-secret)\b\s*[:=]\s*(?:Bearer\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+const SHELL_CREDENTIAL_VARIABLE_PATTERN =
+  /\$(?:\{)?[A-Z_][A-Z0-9_]*(?:TOKEN|PAT|SECRET|KEY)[A-Z0-9_]*(?:\})?/;
+const GIT_REMOTE_CREDENTIAL_URL_PATTERN =
+  /\bgit\s+remote\s+set-url\b[^\n]*https?:\/\/[^\s"'`]*\$(?:\{)?[A-Z_][A-Z0-9_]*(?:TOKEN|PAT|SECRET|KEY)[A-Z0-9_]*(?:\})?[^\s"'`]*@/i;
+const MEMORY_CREDENTIAL_STORAGE_PATTERN =
+  /\bsave\s+(?:it|the\s+(?:token|secret|credential|key|pat))\s+to\s+(?:your\s+)?(?:memory|conversation|chat)\b/i;
+const HOST_PLATFORM_SOURCE_CONTEXT_PATTERN =
+  /\$[{]?OPENCLAW_DIR[}]?.{0,200}\/src\/|\/src\/agents\/|\/src\/tools\//is;
+const HOST_PLATFORM_PATCH_COMMAND_PATTERN =
+  /\b(?:sed\s+-i|perl\s+-0?pi|cp\s+|cat\s+>|python3?\b.{0,120}(?:write|replace))/i;
+const HOST_PLATFORM_REBUILD_PATTERN = /\b(?:pnpm\s+build|npm\s+run\s+build|bun\s+run\s+build)\b/i;
+const BROWSER_USE_PASSWORD_ARGV_PATTERN =
+  /\bbrowser-use\s+input\b[^\n]*(?:password|passwd|\$[A-Z_]*(?:PASSWORD|PASS|PWD)[A-Z0-9_]*|<password>|\{password\})/i;
+const BROWSER_USE_AUTH_EVAL_PATTERN = /\bbrowser-use\s+(?:eval|python)\b/i;
+const AUTHENTICATED_MAIL_CONTEXT_PATTERN = /\b(?:mail\.google\.com|gmail|webmail|mailbox|inbox)\b/i;
+const PERSISTENCE_SCHEDULER_PATTERN =
+  /\b(?:launchctl\s+load|crontab\b|LaunchAgents\/|systemctl\s+(?:--user\s+)?enable)\b/i;
+const SECRET_ARGV_WARNING_PATTERN =
+  /\b(?:do\s+not|don't|avoid|never|reject)\b[^\n]{0,120}\b(?:argv|argument|from-mnemonic|private[-_\s]?key|seed[-\s]?phrase|mnemonic)\b/i;
+const FROM_MNEMONIC_ARGV_PATTERN =
+  /\b(?:npx|bunx|pnpm\s+dlx|npm\s+exec|node|python3?|uvx)\b[^\n]{0,200}\bfrom-mnemonic\b[^\n]{0,200}(?:"[^"\n]{8,}"|'[^'\n]{8,}'|<[^>\n]{6,}>|\$[A-Z_][A-Z0-9_]*(?:MNEMONIC|SEED|PHRASE)[A-Z0-9_]*)/i;
+const SECRET_FLAG_ARGV_PATTERN =
+  /\b(?:npx|bunx|pnpm\s+dlx|npm\s+exec|node|python3?|uvx|docker\s+run)\b[^\n]{0,240}--(?:private-key|seed|seed-phrase|mnemonic|password|token)\s+(?:"[^"\n]{8,}"|'[^'\n]{8,}'|<[^>\n]{4,}>|\$[A-Z_][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|MNEMONIC|SEED|PHRASE)[A-Z0-9_]*)/i;
+const SECRET_ARGV_REDACTION_PATTERN =
+  /(\b(?:from-mnemonic|--(?:private-key|seed|seed-phrase|mnemonic|password|token))\s+)(["'`])([^"'`]{8,})\2/gi;
+const DYNAMIC_CODE_EXECUTION_PATTERN =
+  /\beval\s*\(|new\s+Function\s*\(|\b(?:[A-Za-z_][A-Za-z0-9_]*\.)?loader\.exec_module\s*\(/;
+const SHELL_BASE64_FILE_READ_PATTERN =
+  /(?:\bcat\s+["']?\$[A-Za-z_][A-Za-z0-9_]*["']?\s*\|\s*base64\b|\bbase64\b[^\n]{0,80}["']?\$[A-Za-z_][A-Za-z0-9_]*["']?)/i;
+const SHELL_NETWORK_UPLOAD_PATTERN =
+  /\bcurl\b[\s\S]{0,1600}(?:--data(?:-binary|-raw)?\b|-d\b|--form\b|-F\b|--upload-file\b|Authorization\s*:)/i;
+const PLAYWRIGHT_CHROMIUM_PATTERN = /\b(?:playwright\.)?chromium\.launch\s*\(/i;
+const FILE_URL_BROWSER_NAVIGATION_PATTERN = /\bpage\.goto\s*\([^)]*file:\/\//i;
+const SVG_HTML_INTERPOLATION_PATTERN =
+  /(?:<body>[\s\S]{0,240}\$\{[^}]*svg[^}]*\}|writeFile(?:Sync)?\s*\([^)]*\.html[^)]*\$\{[^}]*svg[^}]*\}|\$\{[^}]*svg[^}]*\}[\s\S]{0,240}<\/body>)/i;
+const BROWSER_JS_DISABLED_PATTERN =
+  /javaScriptEnabled\s*:\s*false|Content-Security-Policy|script-src\s+['"]?none/i;
+const AGENT_OUTPUT_DIR_ARGUMENT_PATTERN =
+  /add_argument\s*\(\s*["']--outdir["']|args\.outdir|output_path\s*=\s*Path\s*\(\s*args\.outdir\s*\)/i;
+const FFMPEG_FORCE_OUTPUT_PATTERN =
+  /subprocess\.run\s*\(\s*\[[\s\S]{0,1000}["']ffmpeg["'][\s\S]{0,1000}["']-y["'][\s\S]{0,1000}str\s*\(\s*output_path\s*\)/i;
+const OUTPUT_PATH_GUARD_PATTERN =
+  /TemporaryDirectory|mkdtemp|tempfile\.|resolve\s*\(\s*\).*relative_to|is_relative_to\s*\(/i;
+const INSECURE_TLS_VERIFICATION_PATTERN =
+  /ssl\._create_unverified_context\s*\(|ssl\.CERT_NONE\b|check_hostname\s*=\s*False\b|verify\s*=\s*False\b|rejectUnauthorized\s*:\s*false\b|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*["']?0["']?/i;
+const PYTHON_AGENT_FILENAME_PATTERN =
+  /\b(?:filename\s*:\s*str|req\.filename|filename\s*=|["']filename["'])\b/i;
+const PYTHON_RCLONE_FILENAME_SINK_PATTERN =
+  /(?:rclone_dir\s*\/\s*filename|f["']\.\/\{filename\}|open\s*\(\s*temp_file_path\s*,|subprocess\.run\s*\([\s\S]{0,1000}["']\.\/rclone["'])/i;
+const PYTHON_FILENAME_GUARD_PATTERN =
+  /\b(?:secure_filename|basename\s*\(|Path\s*\(\s*filename\s*\)\.name|filename\s*=\s*Path\s*\(\s*filename\s*\)\.name|resolve\s*\(\s*\).*relative_to|is_relative_to\s*\(|["']\.\.["']\s+in\s+filename|["']\/["']\s+in\s+filename)/i;
+const PYTHON_CREDENTIAL_ENV_PATTERN =
+  /\b(?:os\.environ(?:\.get)?|os\.getenv|getenv)\s*(?:\[\s*|\(\s*)["'][A-Za-z_][A-Za-z0-9_]*(?:PASS|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*["']/i;
+const PYTHON_URL_ENV_PATTERN =
+  /\b(?:os\.environ(?:\.get)?|os\.getenv|getenv)\s*(?:\[\s*|\(\s*)["'][A-Za-z_][A-Za-z0-9_]*(?:BASE_URL|URL|HOST|ENDPOINT)[A-Za-z0-9_]*["']/i;
+const PYTHON_HTTP_POST_PATTERN =
+  /\b(?:requests|session|self\.session|client)\.post\s*\(|\.post\s*\(/i;
+const PASSWORD_PAYLOAD_PATTERN = /["']password["']\s*:|password\s*=/i;
+const AUTONOMOUS_AGENT_SCHEDULE_PATTERN =
+  /\bAUTO_ANSWER\s*=\s*(?:true|os\.getenv\s*\(\s*["']AUTO_ANSWER["']\s*,\s*["']true["'])|while\s+True\s*:|time\.sleep\s*\(\s*(?:[3-9]\d{2,}|[1-9]\d{3,})\s*\)|\binterval\s*=\s*(?:[3-9]\d{2,}|[1-9]\d{3,})|"kind"\s*:\s*"cron"|"expr"\s*:\s*["'][^"']*\*\/(?:[1-5]?\d)\b/is;
+const CREDENTIAL_BEARING_AGENT_PATTERN =
+  /\b(?:X-API-Key|api_key|API_KEY|VDOOB_API_KEY|AGENT_ID|agent_config\.json)\b/i;
+const AUTONOMOUS_ANSWER_EGRESS_PATTERN =
+  /\b(?:requests|session|client)\.post\s*\([\s\S]{0,1000}(?:submit-answer|agent-withdrawals|agents\/register|messages\/agent)|\b(?:submit_answer|answer_question|act_cron_check)\b/i;
+const HARDCODED_OPERATOR_BASE_URL_PATTERN =
+  /\bBASE_URL\s*=\s*["']https:\/\/(?!your-|example\.|localhost\b|127\.0\.0\.1\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d+)?(?:\/[^"']*)?["']/i;
+const OAUTH_CLIENT_SECRET_FLOW_PATTERN =
+  /\b(?:oauth\/register|oauth\/token|client_secret|Authorization:\s*Bearer|ACCESS_TOKEN)\b/i;
+const LIGHTNING_BILLING_FLOW_PATTERN =
+  /\b(?:billing\/agent\/(?:create|check)-invoice|amount_sats|LNURL|Lightning|PAYG)\b/i;
+const OUTBOUND_POST_PATTERN = /\b(?:curl\s+-X\s+POST|requests\.post\s*\(|fetch\s*\()/i;
+const REMOTE_RECIPE_FETCH_PATTERN =
+  /\b(?:curl|requests\.get|fetch)\b[\s\S]{0,600}(?:error-codes\.json|recipes?\.json|patterns\.json|docs\.openclaw\.ai)|ERROR_CODES_URL\s*=/i;
+const MUTABLE_RECIPE_STORE_PATTERN =
+  /\b(?:error-patterns\.json|recipes?\.json|safe_auto|fix_recipe_id|["']command["'])\b/i;
+const TEMPLATED_SUBPROCESS_EXECUTION_PATTERN =
+  /\bsubstitute_params\s*\([\s\S]{0,500}\b(?:shlex\.split|subprocess\.run)\b|\b(?:shlex\.split|subprocess\.run)\b[\s\S]{0,500}\bsubstitute_params\s*\(/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -136,6 +215,107 @@ function findHardcodedSecret(content: string) {
   return null;
 }
 
+function findCredentialExposureInstruction(content: string) {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (
+      GIT_REMOTE_CREDENTIAL_URL_PATTERN.test(line) ||
+      (MEMORY_CREDENTIAL_STORAGE_PATTERN.test(line) &&
+        SHELL_CREDENTIAL_VARIABLE_PATTERN.test(content))
+    ) {
+      return { line: i + 1, text: line };
+    }
+  }
+  return null;
+}
+
+function findBrowserCredentialAutomation(content: string) {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (BROWSER_USE_PASSWORD_ARGV_PATTERN.test(line)) {
+      return { line: i + 1, text: line };
+    }
+  }
+
+  if (
+    BROWSER_USE_AUTH_EVAL_PATTERN.test(content) &&
+    AUTHENTICATED_MAIL_CONTEXT_PATTERN.test(content) &&
+    PERSISTENCE_SCHEDULER_PATTERN.test(content)
+  ) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      if (BROWSER_USE_AUTH_EVAL_PATTERN.test(line) || PERSISTENCE_SCHEDULER_PATTERN.test(line)) {
+        return { line: i + 1, text: line };
+      }
+    }
+  }
+
+  return null;
+}
+
+function redactSecretArgvEvidence(line: string) {
+  return line.replace(SECRET_ARGV_REDACTION_PATTERN, "$1$2[REDACTED]$2");
+}
+
+function findSecretArgvExposure(content: string) {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (SECRET_ARGV_WARNING_PATTERN.test(line)) continue;
+    if (FROM_MNEMONIC_ARGV_PATTERN.test(line) || SECRET_FLAG_ARGV_PATTERN.test(line)) {
+      return { line: i + 1, text: redactSecretArgvEvidence(line) };
+    }
+  }
+  return null;
+}
+
+function findHostPlatformSourcePatch(content: string) {
+  if (!HOST_PLATFORM_SOURCE_CONTEXT_PATTERN.test(content)) return null;
+  if (!HOST_PLATFORM_REBUILD_PATTERN.test(content)) return null;
+
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (!HOST_PLATFORM_PATCH_COMMAND_PATTERN.test(line)) continue;
+    if (hasNearbyConfirmationGate(lines, i)) continue;
+    return { line: i + 1, text: line };
+  }
+  return null;
+}
+
+function scanSecretLiteralFile(path: string, content: string, findings: ModerationFinding[]) {
+  const secretMatch = findHardcodedSecret(content);
+  if (!secretMatch) return;
+
+  addFinding(findings, {
+    code: REASON_CODES.EXPOSED_SECRET_LITERAL,
+    severity: "critical",
+    file: path,
+    line: secretMatch.line,
+    message: "File appears to expose a hardcoded API secret or token.",
+    evidence: secretMatch.text,
+  });
+}
+
+function scanPlaintextCgnatEndpointFile(
+  path: string,
+  content: string,
+  findings: ModerationFinding[],
+) {
+  if (!CGNAT_HTTP_URL_PATTERN.test(content)) return;
+  const match = findFirstLine(content, CGNAT_HTTP_URL_PATTERN);
+  addFinding(findings, {
+    code: REASON_CODES.EXPOSED_RESOURCE_IDENTIFIER,
+    severity: "critical",
+    file: path,
+    line: match.line,
+    message: "Plaintext HTTP endpoint targets a CGNAT/Tailscale-range address.",
+    evidence: match.text,
+  });
+}
+
 function hasNearbyConfirmationGate(lines: string[], commandIndex: number) {
   const start = Math.max(0, commandIndex - 8);
   const context = lines.slice(start, commandIndex + 1).join("\n");
@@ -163,7 +343,10 @@ function hasShellVariableValidation(content: string, variable: string, useIndex:
   const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const beforeUse = content.slice(0, useIndex);
   const variableReference = String.raw`(?:\$\{${escaped}\}|\$${escaped})`;
-  const lengthCheck = new RegExp(String.raw`\$\{#${escaped}\}\s*(?:-[a-z]\s+)?(?:[<>!=]=?|-[gl][te])`, "m");
+  const lengthCheck = new RegExp(
+    String.raw`\$\{#${escaped}\}\s*(?:-[a-z]\s+)?(?:[<>!=]=?|-[gl][te])`,
+    "m",
+  );
   const controlCharStrip = new RegExp(
     String.raw`(?:tr\s+-d\s+["']?\\(?:000|x00).{0,80}\\(?:037|x1[fF]|177|x7[fF])|${escaped}\s*=.*tr\s+-d)`,
     "s",
@@ -173,7 +356,11 @@ function hasShellVariableValidation(content: string, variable: string, useIndex:
     "is",
   );
 
-  return lengthCheck.test(beforeUse) || controlCharStrip.test(beforeUse) || explicitValidation.test(beforeUse);
+  return (
+    lengthCheck.test(beforeUse) ||
+    controlCharStrip.test(beforeUse) ||
+    explicitValidation.test(beforeUse)
+  );
 }
 
 function findUnsafeBrowserTextInput(content: string) {
@@ -287,6 +474,91 @@ function findDangerousChildProcessCall(content: string) {
   return null;
 }
 
+function findShellBase64FileUpload(content: string) {
+  if (!/\bcurl\b/i.test(content) || !/\bbase64\b/i.test(content)) return null;
+  if (!SHELL_NETWORK_UPLOAD_PATTERN.test(content)) return null;
+  return findFirstLine(content, SHELL_BASE64_FILE_READ_PATTERN);
+}
+
+function findUnsafeBrowserFileRender(content: string) {
+  if (!PLAYWRIGHT_CHROMIUM_PATTERN.test(content)) return null;
+  if (!FILE_URL_BROWSER_NAVIGATION_PATTERN.test(content)) return null;
+  if (!SVG_HTML_INTERPOLATION_PATTERN.test(content)) return null;
+  if (BROWSER_JS_DISABLED_PATTERN.test(content)) return null;
+  return findFirstLine(content, FILE_URL_BROWSER_NAVIGATION_PATTERN);
+}
+
+function findUnsafeAgentControlledFileWrite(content: string) {
+  if (!AGENT_OUTPUT_DIR_ARGUMENT_PATTERN.test(content)) return null;
+  if (!FFMPEG_FORCE_OUTPUT_PATTERN.test(content)) return null;
+  if (OUTPUT_PATH_GUARD_PATTERN.test(content)) return null;
+  return findFirstLine(content, /subprocess\.run\s*\(|["']-y["']|output_path\s*=/);
+}
+
+function findUnsafePythonRcloneFilename(content: string) {
+  if (!PYTHON_AGENT_FILENAME_PATTERN.test(content)) return null;
+  if (!/\brclone\b/.test(content) || !/subprocess\.run\s*\(/.test(content)) return null;
+  if (!PYTHON_RCLONE_FILENAME_SINK_PATTERN.test(content)) return null;
+  if (PYTHON_FILENAME_GUARD_PATTERN.test(content)) return null;
+  return findFirstLine(
+    content,
+    /rclone_dir\s*\/\s*filename|f["']\.\/\{filename\}|subprocess\.run\s*\(/,
+  );
+}
+
+function findPythonCredentialPostToEnvUrl(content: string) {
+  if (!PYTHON_CREDENTIAL_ENV_PATTERN.test(content)) return null;
+  if (!PYTHON_URL_ENV_PATTERN.test(content)) return null;
+  if (!PYTHON_HTTP_POST_PATTERN.test(content)) return null;
+  if (!PASSWORD_PAYLOAD_PATTERN.test(content)) return null;
+  return findFirstLine(content, PYTHON_HTTP_POST_PATTERN);
+}
+
+function findAutonomousCredentialEgress(files: TextFile[]) {
+  const packageText = files.map((file) => file.content).join("\n");
+  if (!AUTONOMOUS_AGENT_SCHEDULE_PATTERN.test(packageText)) return null;
+  if (!CREDENTIAL_BEARING_AGENT_PATTERN.test(packageText)) return null;
+  if (!AUTONOMOUS_ANSWER_EGRESS_PATTERN.test(packageText)) return null;
+
+  for (const file of files) {
+    if (!AUTONOMOUS_ANSWER_EGRESS_PATTERN.test(file.content)) continue;
+    const match = findFirstLine(file.content, AUTONOMOUS_ANSWER_EGRESS_PATTERN);
+    return { file: file.path, line: match.line, text: match.text };
+  }
+
+  const fallback = files[0];
+  if (!fallback) return null;
+  return { file: fallback.path, line: 1, text: fallback.content.split("\n")[0] ?? "" };
+}
+
+function findRemoteRecipeExecution(files: TextFile[]) {
+  const packageText = files.map((file) => file.content).join("\n");
+  if (!REMOTE_RECIPE_FETCH_PATTERN.test(packageText)) return null;
+  if (!MUTABLE_RECIPE_STORE_PATTERN.test(packageText)) return null;
+  if (!TEMPLATED_SUBPROCESS_EXECUTION_PATTERN.test(packageText)) return null;
+
+  for (const file of files) {
+    if (!TEMPLATED_SUBPROCESS_EXECUTION_PATTERN.test(file.content)) continue;
+    const match = findFirstLine(
+      file.content,
+      /substitute_params\s*\(|shlex\.split|subprocess\.run/,
+    );
+    return { file: file.path, line: match.line, text: match.text };
+  }
+
+  const fallback = files[0];
+  if (!fallback) return null;
+  return { file: fallback.path, line: 1, text: fallback.content.split("\n")[0] ?? "" };
+}
+
+function findHardcodedOperatorBillingEndpoint(content: string) {
+  if (!HARDCODED_OPERATOR_BASE_URL_PATTERN.test(content)) return null;
+  if (!OAUTH_CLIENT_SECRET_FLOW_PATTERN.test(content)) return null;
+  if (!LIGHTNING_BILLING_FLOW_PATTERN.test(content)) return null;
+  if (!OUTBOUND_POST_PATTERN.test(content)) return null;
+  return findFirstLine(content, HARDCODED_OPERATOR_BASE_URL_PATTERN);
+}
+
 function normalizeEnvName(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -311,22 +583,45 @@ function addDeclaredEnvNamesFromList(names: Set<string>, value: unknown) {
   }
 }
 
-function collectDeclaredEnvNames(input: { frontmatter: Record<string, unknown>; metadata?: unknown }) {
+function addDeclaredEnvNamesFromRecord(names: Set<string>, record: Record<string, unknown>) {
+  const requires =
+    record.requires && typeof record.requires === "object" && !Array.isArray(record.requires)
+      ? (record.requires as Record<string, unknown>)
+      : undefined;
+
+  addDeclaredEnvName(names, record.primaryEnv);
+  addDeclaredEnvNamesFromList(names, record.envVars);
+  addDeclaredEnvNamesFromList(names, record.env);
+  addDeclaredEnvNamesFromList(names, requires?.env);
+}
+
+function addDeclaredEnvNamesFromManifestBlock(names: Set<string>, value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  addDeclaredEnvNamesFromRecord(names, value as Record<string, unknown>);
+}
+
+function collectDeclaredEnvNames(input: {
+  frontmatter: Record<string, unknown>;
+  metadata?: unknown;
+}) {
   const names = new Set<string>();
   const sources: unknown[] = [input.frontmatter, input.metadata];
 
   for (const source of sources) {
     if (!source || typeof source !== "object" || Array.isArray(source)) continue;
     const record = source as Record<string, unknown>;
-    const requires =
-      record.requires && typeof record.requires === "object" && !Array.isArray(record.requires)
-        ? (record.requires as Record<string, unknown>)
-        : undefined;
 
-    addDeclaredEnvName(names, record.primaryEnv);
-    addDeclaredEnvNamesFromList(names, record.envVars);
-    addDeclaredEnvNamesFromList(names, record.env);
-    addDeclaredEnvNamesFromList(names, requires?.env);
+    addDeclaredEnvNamesFromRecord(names, record);
+    addDeclaredEnvNamesFromManifestBlock(names, record.openclaw);
+    addDeclaredEnvNamesFromManifestBlock(names, record.clawdis);
+    addDeclaredEnvNamesFromManifestBlock(names, record.clawdbot);
+
+    if (record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)) {
+      const metadata = record.metadata as Record<string, unknown>;
+      addDeclaredEnvNamesFromManifestBlock(names, metadata.openclaw);
+      addDeclaredEnvNamesFromManifestBlock(names, metadata.clawdis);
+      addDeclaredEnvNamesFromManifestBlock(names, metadata.clawdbot);
+    }
   }
 
   return names;
@@ -376,8 +671,8 @@ function scanCodeFile(
     });
   }
 
-  if (/\beval\s*\(|new\s+Function\s*\(/.test(content)) {
-    const match = findFirstLine(content, /\beval\s*\(|new\s+Function\s*\(/);
+  if (DYNAMIC_CODE_EXECUTION_PATTERN.test(content)) {
+    const match = findFirstLine(content, DYNAMIC_CODE_EXECUTION_PATTERN);
     addFinding(findings, {
       code: REASON_CODES.DYNAMIC_CODE,
       severity: "critical",
@@ -397,6 +692,67 @@ function scanCodeFile(
       line: unsafeBrowserTextInput.line,
       message: "Shell positional input is typed into browser automation without validation.",
       evidence: unsafeBrowserTextInput.text,
+    });
+  }
+
+  const hostPlatformSourcePatch = findHostPlatformSourcePatch(content);
+  if (hostPlatformSourcePatch) {
+    addFinding(findings, {
+      code: REASON_CODES.HOST_PLATFORM_SOURCE_PATCH,
+      severity: "critical",
+      file: path,
+      line: hostPlatformSourcePatch.line,
+      message: "Install code patches host platform source and rebuilds without confirmation.",
+      evidence: hostPlatformSourcePatch.text,
+    });
+  }
+
+  const unsafeBrowserFileRender = findUnsafeBrowserFileRender(content);
+  if (unsafeBrowserFileRender) {
+    addFinding(findings, {
+      code: REASON_CODES.BROWSER_FILE_RENDER,
+      severity: "critical",
+      file: path,
+      line: unsafeBrowserFileRender.line,
+      message:
+        "Browser automation renders interpolated SVG/HTML from a file URL with JavaScript enabled.",
+      evidence: unsafeBrowserFileRender.text,
+    });
+  }
+
+  const unsafeAgentControlledFileWrite = findUnsafeAgentControlledFileWrite(content);
+  if (unsafeAgentControlledFileWrite) {
+    addFinding(findings, {
+      code: REASON_CODES.UNSAFE_FILE_WRITE,
+      severity: "critical",
+      file: path,
+      line: unsafeAgentControlledFileWrite.line,
+      message: "Agent-controlled output path is passed to an overwrite-capable subprocess.",
+      evidence: unsafeAgentControlledFileWrite.text,
+    });
+  }
+
+  if (INSECURE_TLS_VERIFICATION_PATTERN.test(content)) {
+    const match = findFirstLine(content, INSECURE_TLS_VERIFICATION_PATTERN);
+    addFinding(findings, {
+      code: REASON_CODES.INSECURE_TLS_VERIFICATION,
+      severity: "warn",
+      file: path,
+      line: match.line,
+      message: "HTTPS certificate verification is disabled.",
+      evidence: match.text,
+    });
+  }
+
+  const unsafePythonRcloneFilename = findUnsafePythonRcloneFilename(content);
+  if (unsafePythonRcloneFilename) {
+    addFinding(findings, {
+      code: REASON_CODES.UNSAFE_FILE_WRITE,
+      severity: "critical",
+      file: path,
+      line: unsafePythonRcloneFilename.line,
+      message: "Agent-controlled filename is written and passed to rclone without path validation.",
+      evidence: unsafePythonRcloneFilename.text,
     });
   }
 
@@ -442,6 +798,44 @@ function scanCodeFile(
     });
   }
 
+  const shellBase64FileUpload = findShellBase64FileUpload(content);
+  if (shellBase64FileUpload) {
+    addFinding(findings, {
+      code: REASON_CODES.EXFILTRATION,
+      severity: "critical",
+      file: path,
+      line: shellBase64FileUpload.line,
+      message: "Shell script base64-encodes a local file and sends it over the network.",
+      evidence: shellBase64FileUpload.text,
+    });
+  }
+
+  const pythonCredentialPost = findPythonCredentialPostToEnvUrl(content);
+  if (pythonCredentialPost) {
+    addFinding(findings, {
+      code: REASON_CODES.CREDENTIAL_HARVEST,
+      severity: "critical",
+      file: path,
+      line: pythonCredentialPost.line,
+      message:
+        "Python code POSTs credential environment variables to an environment-controlled URL.",
+      evidence: pythonCredentialPost.text,
+    });
+  }
+
+  const hardcodedOperatorBilling = findHardcodedOperatorBillingEndpoint(content);
+  if (hardcodedOperatorBilling) {
+    addFinding(findings, {
+      code: REASON_CODES.HARDCODED_OPERATOR_BILLING,
+      severity: "critical",
+      file: path,
+      line: hardcodedOperatorBilling.line,
+      message:
+        "Hardcoded operator endpoint combines OAuth credentials with Lightning billing calls.",
+      evidence: hardcodedOperatorBilling.text,
+    });
+  }
+
   const hasProcessEnv = /process\.env/.test(content);
   if (hasProcessEnv && hasNetworkSend) {
     const referencedEnvNames = collectReferencedEnvNames(content);
@@ -482,15 +876,52 @@ function scanCodeFile(
 function scanMarkdownFile(path: string, content: string, findings: ModerationFinding[]) {
   if (!MARKDOWN_EXTENSION.test(path)) return;
 
-  const secretMatch = findHardcodedSecret(content);
-  if (secretMatch) {
+  const credentialExposure = findCredentialExposureInstruction(content);
+  if (credentialExposure) {
     addFinding(findings, {
-      code: REASON_CODES.EXPOSED_SECRET_LITERAL,
+      code: REASON_CODES.CREDENTIAL_EXPOSURE_INSTRUCTIONS,
       severity: "critical",
       file: path,
-      line: secretMatch.line,
-      message: "Documentation appears to expose a hardcoded API secret or token.",
-      evidence: secretMatch.text,
+      line: credentialExposure.line,
+      message: "Instructions expose credentials through shell, git config, or agent memory.",
+      evidence: credentialExposure.text,
+    });
+  }
+
+  const browserCredentialAutomation = findBrowserCredentialAutomation(content);
+  if (browserCredentialAutomation) {
+    addFinding(findings, {
+      code: REASON_CODES.BROWSER_CREDENTIAL_AUTOMATION,
+      severity: "critical",
+      file: path,
+      line: browserCredentialAutomation.line,
+      message: "Browser automation instructions expose credentials or persist authenticated eval.",
+      evidence: browserCredentialAutomation.text,
+    });
+  }
+
+  const secretArgvExposure = findSecretArgvExposure(content);
+  if (secretArgvExposure) {
+    addFinding(findings, {
+      code: REASON_CODES.SECRET_ARGV_EXPOSURE,
+      severity: "critical",
+      file: path,
+      line: secretArgvExposure.line,
+      message: "Instructions pass high-value credentials through process argv.",
+      evidence: secretArgvExposure.text,
+    });
+  }
+
+  const hardcodedOperatorBilling = findHardcodedOperatorBillingEndpoint(content);
+  if (hardcodedOperatorBilling) {
+    addFinding(findings, {
+      code: REASON_CODES.HARDCODED_OPERATOR_BILLING,
+      severity: "critical",
+      file: path,
+      line: hardcodedOperatorBilling.line,
+      message:
+        "Hardcoded operator endpoint combines OAuth credentials with Lightning billing calls.",
+      evidence: hardcodedOperatorBilling.text,
     });
   }
 
@@ -516,7 +947,8 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       severity: "warn",
       file: path,
       line: destructiveDelete.line,
-      message: "Documentation contains a destructive delete command without an explicit confirmation gate.",
+      message:
+        "Documentation contains a destructive delete command without an explicit confirmation gate.",
       evidence: destructiveDelete.text,
     });
   }
@@ -592,7 +1024,8 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       severity: "critical",
       file: path,
       line: match.line,
-      message: "Example code exposes a concrete Google Sheets spreadsheet ID instead of a placeholder.",
+      message:
+        "Example code exposes a concrete Google Sheets spreadsheet ID instead of a placeholder.",
       evidence: match.text,
     });
     break;
@@ -679,9 +1112,36 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
   const declaredEnvNames = collectDeclaredEnvNames(input);
 
   for (const file of files) {
+    scanSecretLiteralFile(file.path, file.content, findings);
+    scanPlaintextCgnatEndpointFile(file.path, file.content, findings);
     scanCodeFile(file.path, file.content, findings, declaredEnvNames);
     scanMarkdownFile(file.path, file.content, findings);
     scanManifestFile(file.path, file.content, findings);
+  }
+
+  const autonomousCredentialEgress = findAutonomousCredentialEgress(files);
+  if (autonomousCredentialEgress) {
+    addFinding(findings, {
+      code: REASON_CODES.AUTONOMOUS_CREDENTIAL_EGRESS,
+      severity: "critical",
+      file: autonomousCredentialEgress.file,
+      line: autonomousCredentialEgress.line,
+      message:
+        "Autonomous schedule or loop submits credential-bearing agent output without per-call consent.",
+      evidence: autonomousCredentialEgress.text,
+    });
+  }
+
+  const remoteRecipeExecution = findRemoteRecipeExecution(files);
+  if (remoteRecipeExecution) {
+    addFinding(findings, {
+      code: REASON_CODES.REMOTE_RECIPE_EXECUTION,
+      severity: "critical",
+      file: remoteRecipeExecution.file,
+      line: remoteRecipeExecution.line,
+      message: "Remote recipe/catalog data can influence templated subprocess command execution.",
+      evidence: remoteRecipeExecution.text,
+    });
   }
 
   const installJson = JSON.stringify(input.metadata ?? {});

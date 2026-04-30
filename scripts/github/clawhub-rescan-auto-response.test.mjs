@@ -42,6 +42,31 @@ describe("clawhub rescan auto-response classifier", () => {
       'Request for Security Re-evaluation: "book-companion" skill marked as suspicious',
       "I have proactively audited the skill and implemented compliance measures. Please review the updated documentation and clear the suspicious flag.",
     ],
+    [
+      758,
+      "False positive: create-project skill flagged as suspicious by VirusTotal",
+      "The create-project skill has been flagged as suspicious. This appears to be the same class of false positive as other issues.",
+    ],
+    [
+      256,
+      "False positive: clawarr-suite flagged as suspicious",
+      "Please review and unflag this plugin. All patterns are standard for a media server management tool.",
+    ],
+    [
+      1901,
+      "Suspicious flag on my skill",
+      "The current version is still flagged as suspicious after the metadata update.",
+    ],
+    [
+      1902,
+      "Skill flagged as suspicious",
+      "This skill should be clean now. Please tell me how to clear the flag.",
+    ],
+    [
+      1903,
+      "supicious flag on plugin",
+      "The plugin is incorrectly flagged and needs a fresh scan.",
+    ],
   ])("matches explicit rescan/re-evaluation request #%s", (number, title, body) => {
     const result = classifyRescanRequest(issue({ number, title, body }));
 
@@ -63,19 +88,14 @@ describe("clawhub rescan auto-response classifier", () => {
       "The clawhub CLI fails to authenticate because a redirect loses the Authorization header.",
     ],
     [
-      758,
-      "False positive: create-project skill flagged as suspicious by VirusTotal",
-      "The create-project skill has been flagged as suspicious. This appears to be the same class of false positive as other issues.",
-    ],
-    [
-      256,
-      "False positive: clawarr-suite flagged as suspicious",
-      "Please review and unflag. All patterns are standard for a media server management tool.",
-    ],
-    [
       1514,
       "False duplicate flag: claude-to-free is not a duplicate of model-migration",
       "This skill is not a duplicate. Please remove the duplicate flag.",
+    ],
+    [
+      1904,
+      "False positive: search result disappeared",
+      "My skill vanished from search results after publishing the latest version.",
     ],
   ])("does not match non-rescan issue #%s", (number, title, body) => {
     const result = classifyRescanRequest(issue({ number, title, body }));

@@ -183,7 +183,7 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
 }
 
 function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
-  return acceptLicenseTerms !== false;
+  return acceptLicenseTerms === true;
 }
 
 export const cliPublishHttp = httpAction(cliPublishHandler);

@@ -724,6 +724,9 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills supports sort aliases", async () => {
     const checks: Array<[string, string | null]> = [
+      ["createdAt", "newest"],
+      ["created-at", "newest"],
+      ["newest", "newest"],
       ["rating", "stars"],
       ["installs", "installs"],
       ["installs-all-time", "installs"],
@@ -1923,15 +1926,10 @@ describe("httpApiV1 handlers", () => {
     expect(publishVersionForUser).toHaveBeenCalled();
   });
 
-  it("publish json accepts legacy clients that omit license terms", async () => {
+  it("publish json rejects omitted license terms", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
-    } as never);
-    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: "s",
-      versionId: "v",
-      embeddingId: "e",
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const body = JSON.stringify({
@@ -1957,7 +1955,9 @@ describe("httpApiV1 handlers", () => {
         body,
       }),
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/license terms must be accepted/i);
+    expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
   it("publish multipart succeeds", async () => {
@@ -1997,15 +1997,10 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("publish multipart accepts legacy clients that omit license terms", async () => {
+  it("publish multipart rejects omitted license terms", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
-    } as never);
-    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: "s",
-      versionId: "v",
-      embeddingId: "e",
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const form = new FormData();
@@ -2028,7 +2023,9 @@ describe("httpApiV1 handlers", () => {
         body: form,
       }),
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/license terms must be accepted/i);
+    expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
   it("publish rejects explicit license refusal", async () => {
@@ -3693,6 +3690,9 @@ describe("httpApiV1 handlers", () => {
       "package/package.json",
     ]);
     expect(zipEntries["_meta.json"]).toBeUndefined();
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
+      packageId: "packages:1",
+    });
   });
 
   it("package download fails when any stored file is missing", async () => {

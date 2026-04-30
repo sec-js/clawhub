@@ -53,6 +53,7 @@ const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
 const POPULARITY_WEIGHT = 0.08;
 const FALLBACK_SCAN_LIMIT = 2000;
+const MIN_STABLE_SEARCH_RECALL_LIMIT = 100;
 const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 function getNextCandidateLimit(current: number, max: number) {
@@ -168,11 +169,14 @@ export const searchSkills: ReturnType<typeof action> = action({
       vector = null;
     }
     const limit = args.limit ?? 10;
+    // Keep ordinary first-page and load-more requests ranking the same recall pool
+    // before slicing, so expanding the display limit does not reshuffle the prefix.
+    const recallLimit = Math.max(limit, MIN_STABLE_SEARCH_RECALL_LIMIT);
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
     // Keep the initial pool large enough to catch moderate-vector matches
     // that win after lexical and popularity scoring, even for small limits.
-    const maxCandidate = Math.min(Math.max(limit * 10, 200), 256);
-    let candidateLimit = Math.min(Math.max(limit * 3, 200), 256);
+    const maxCandidate = Math.min(Math.max(recallLimit * 10, 200), 256);
+    let candidateLimit = Math.min(Math.max(recallLimit * 3, 200), 256);
     let hydrated: SkillSearchEntry[] = [];
     const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
     let scoreById = new Map<Id<"skillEmbeddings">, number>();
@@ -183,8 +187,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
           vector,
           limit: candidateLimit,
-          filter: (q) =>
-            q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
+          filter: (q) => q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
         });
 
         // Only hydrate embedding IDs we haven't seen yet (incremental).
@@ -221,7 +224,7 @@ export const searchSkills: ReturnType<typeof action> = action({
           ]),
         );
 
-        if (exactMatches.length >= limit || results.length < candidateLimit) {
+        if (exactMatches.length >= recallLimit || results.length < candidateLimit) {
           break;
         }
 
@@ -236,12 +239,12 @@ export const searchSkills: ReturnType<typeof action> = action({
       : exactMatches;
 
     const fallbackMatches =
-      primaryMatches.length >= limit
+      primaryMatches.length >= recallLimit
         ? []
         : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
             query,
             queryTokens,
-            limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
+            limit: Math.min(Math.max(recallLimit * 4, 200), FALLBACK_SCAN_LIMIT),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
             capabilityTag: args.capabilityTag,
@@ -391,17 +394,28 @@ export const lexicalFallbackSkills = internalQuery({
     // Scan recent active digests (~800 bytes each) instead of full skill docs (~3-5KB).
     // Use updatedAt and createdAt windows so newly published skills are visible even
     // when they are not in the most recently updated slice.
+    const recentByUpdatedQuery = args.nonSuspiciousOnly
+      ? ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_nonsuspicious_updated", (q) =>
+            q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+          )
+      : ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined));
+    const recentByCreatedQuery = args.nonSuspiciousOnly
+      ? ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_nonsuspicious_created", (q) =>
+            q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+          )
+      : ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined));
+
     const [recentByUpdated, recentByCreated] = await Promise.all([
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .take(FALLBACK_SCAN_LIMIT),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .take(FALLBACK_SCAN_LIMIT),
+      recentByUpdatedQuery.order("desc").take(FALLBACK_SCAN_LIMIT),
+      recentByCreatedQuery.order("desc").take(FALLBACK_SCAN_LIMIT),
     ]);
 
     const addDigestCandidates = (digests: typeof recentByUpdated) => {
@@ -455,12 +469,24 @@ export const lexicalFallbackSkills = internalQuery({
 });
 
 type HydratedSoulEntry = {
-  embeddingId: Id<"soulEmbeddings">;
+  embeddingId?: Id<"soulEmbeddings">;
   soul: NonNullable<ReturnType<typeof toPublicSoul>>;
   version: Doc<"soulVersions"> | null;
 };
 
 type SoulSearchResult = HydratedSoulEntry & { score: number };
+
+function mergeUniqueBySoulId(primary: HydratedSoulEntry[], fallback: HydratedSoulEntry[]) {
+  if (fallback.length === 0) return primary;
+  const out = [...primary];
+  const seen = new Set(primary.map((entry) => entry.soul._id));
+  for (const entry of fallback) {
+    if (seen.has(entry.soul._id)) continue;
+    seen.add(entry.soul._id);
+    out.push(entry);
+  }
+  return out;
+}
 
 export const searchSouls: ReturnType<typeof action> = action({
   args: {
@@ -472,12 +498,12 @@ export const searchSouls: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    let vector: number[];
+    let vector: number[] | null;
     try {
       vector = await generateEmbedding(query);
     } catch (error) {
-      console.warn("Search embedding generation failed", error);
-      return [];
+      console.warn("Search embedding generation failed, falling back to lexical search", error);
+      vector = null;
     }
     const limit = args.limit ?? 10;
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
@@ -485,47 +511,76 @@ export const searchSouls: ReturnType<typeof action> = action({
     const maxCandidate = Math.min(Math.max(limit * 10, 200), 256);
     let candidateLimit = Math.min(Math.max(limit * 3, 200), 256);
     let hydrated: HydratedSoulEntry[] = [];
+    const seenEmbeddingIds = new Set<Id<"soulEmbeddings">>();
     let scoreById = new Map<Id<"soulEmbeddings">, number>();
     let exactMatches: HydratedSoulEntry[] = [];
 
-    while (candidateLimit <= maxCandidate) {
-      const results = await ctx.vectorSearch("soulEmbeddings", "by_embedding", {
-        vector,
-        limit: candidateLimit,
-        filter: (q) => q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
-      });
+    if (vector) {
+      while (candidateLimit <= maxCandidate) {
+        const results = await ctx.vectorSearch("soulEmbeddings", "by_embedding", {
+          vector,
+          limit: candidateLimit,
+          filter: (q) => q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
+        });
 
-      hydrated = (await ctx.runQuery(internal.search.hydrateSoulResults, {
-        embeddingIds: results.map((result) => result._id),
-      })) as HydratedSoulEntry[];
+        const newEmbeddingIds = results.map((r) => r._id).filter((id) => !seenEmbeddingIds.has(id));
+        for (const id of newEmbeddingIds) seenEmbeddingIds.add(id);
 
-      for (const result of results) {
-        scoreById.set(result._id, result._score);
+        if (newEmbeddingIds.length > 0) {
+          const newEntries = (await ctx.runQuery(internal.search.hydrateSoulResults, {
+            embeddingIds: newEmbeddingIds,
+          })) as HydratedSoulEntry[];
+          hydrated = [...hydrated, ...newEntries];
+        }
+
+        for (const result of results) {
+          scoreById.set(result._id, result._score);
+        }
+
+        exactMatches = hydrated.filter((entry) =>
+          matchesExactTokens(queryTokens, [
+            entry.soul.displayName,
+            entry.soul.slug,
+            entry.soul.summary,
+          ]),
+        );
+
+        if (exactMatches.length >= limit || results.length < candidateLimit) {
+          break;
+        }
+
+        const nextLimit = getNextCandidateLimit(candidateLimit, maxCandidate);
+        if (!nextLimit) break;
+        candidateLimit = nextLimit;
       }
-
-      exactMatches = hydrated.filter((entry) =>
-        matchesExactTokens(queryTokens, [
-          entry.soul.displayName,
-          entry.soul.slug,
-          entry.soul.summary,
-        ]),
-      );
-
-      if (exactMatches.length >= limit || results.length < candidateLimit) {
-        break;
-      }
-
-      const nextLimit = getNextCandidateLimit(candidateLimit, maxCandidate);
-      if (!nextLimit) break;
-      candidateLimit = nextLimit;
     }
 
-    return exactMatches
-      .map((entry) => ({
-        ...entry,
-        score: scoreById.get(entry.embeddingId) ?? 0,
-      }))
+    const fallbackMatches =
+      exactMatches.length >= limit
+        ? []
+        : ((await ctx.runQuery(internal.search.lexicalFallbackSouls, {
+            query,
+            queryTokens,
+            limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
+          })) as HydratedSoulEntry[]);
+    const mergedMatches = mergeUniqueBySoulId(exactMatches, fallbackMatches);
+
+    return mergedMatches
+      .map((entry) => {
+        const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
+        return {
+          ...entry,
+          score: scoreSkillResult(
+            queryTokens,
+            vectorScore,
+            entry.soul.displayName,
+            entry.soul.slug,
+            entry.soul.stats.downloads,
+          ),
+        };
+      })
       .filter((entry) => entry.soul)
+      .sort((a, b) => b.score - a.score || b.soul.stats.downloads - a.soul.stats.downloads)
       .slice(0, limit);
   },
 });
@@ -550,10 +605,64 @@ export const hydrateSoulResults = internalQuery({
   },
 });
 
+export const lexicalFallbackSouls = internalQuery({
+  args: {
+    query: v.string(),
+    queryTokens: v.array(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<HydratedSoulEntry[]> => {
+    const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
+    const seenSoulIds = new Set<Id<"souls">>();
+    const candidates: Doc<"souls">[] = [];
+
+    const slugQuery = args.query.trim().toLowerCase();
+    if (isSlugLikeQuery(slugQuery)) {
+      const exactSlugSoul = await ctx.db
+        .query("souls")
+        .withIndex("by_slug", (q) => q.eq("slug", slugQuery))
+        .unique();
+      if (exactSlugSoul && !exactSlugSoul.softDeletedAt) {
+        seenSoulIds.add(exactSlugSoul._id);
+        candidates.push(exactSlugSoul);
+      }
+    }
+
+    const recentSouls = await ctx.db
+      .query("souls")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      .order("desc")
+      .take(FALLBACK_SCAN_LIMIT);
+
+    for (const soul of recentSouls) {
+      if (seenSoulIds.has(soul._id)) continue;
+      seenSoulIds.add(soul._id);
+      candidates.push(soul);
+    }
+
+    const matched = candidates.filter((soul) =>
+      matchesExactTokens(args.queryTokens, [soul.displayName, soul.slug, soul.summary]),
+    );
+    if (matched.length === 0) return [];
+
+    const entries = matched.map((soul) => {
+      const publicSoul = toPublicSoul(soul);
+      if (!publicSoul) return null;
+      return {
+        soul: publicSoul,
+        version: null as Doc<"soulVersions"> | null,
+      };
+    });
+
+    return entries.filter((entry): entry is HydratedSoulEntry => entry !== null).slice(0, limit);
+  },
+});
+
 export const __test = {
   getNextCandidateLimit,
   matchesAllTokens,
   getLexicalBoost,
   scoreSkillResult,
   mergeUniqueBySkillId,
+  mergeUniqueBySoulId,
 };
