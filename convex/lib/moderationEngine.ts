@@ -161,6 +161,13 @@ const MUTABLE_RECIPE_STORE_PATTERN =
   /\b(?:error-patterns\.json|recipes?\.json|safe_auto|fix_recipe_id|["']command["'])\b/i;
 const TEMPLATED_SUBPROCESS_EXECUTION_PATTERN =
   /\bsubstitute_params\s*\([\s\S]{0,500}\b(?:shlex\.split|subprocess\.run)\b|\b(?:shlex\.split|subprocess\.run)\b[\s\S]{0,500}\bsubstitute_params\s*\(/i;
+const CONFIRMATION_BYPASS_TRIGGER_PATTERN =
+  /\b(?:OPENCLAW_AGENT_CALL|SAFE_EXEC_AUTO_CONFIRM|SAFEXEC_CONTEXT|I understand the risk)\b/i;
+const RISK_CONFIRMATION_CONTEXT_PATTERN =
+  /\b(?:critical|high|medium|risk|approval|approve|confirm|confirmation|read\s+-p)\b/i;
+const DIRECT_COMMAND_EVAL_PATTERN = /\beval\s+["']?\$command\b/i;
+const HIGH_RISK_CONTEXT_EVAL_PATTERN =
+  /\b(?:critical|high|medium)\b[\s\S]{0,900}\beval\s+["']?\$command\b|\bI understand the risk\b[\s\S]{0,1200}\beval\s+["']?\$command\b/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -559,6 +566,17 @@ function findHardcodedOperatorBillingEndpoint(content: string) {
   return findFirstLine(content, HARDCODED_OPERATOR_BASE_URL_PATTERN);
 }
 
+function findConfirmationBypass(content: string) {
+  if (!CONFIRMATION_BYPASS_TRIGGER_PATTERN.test(content)) return null;
+  if (!RISK_CONFIRMATION_CONTEXT_PATTERN.test(content)) return null;
+  if (!DIRECT_COMMAND_EVAL_PATTERN.test(content)) return null;
+  if (!HIGH_RISK_CONTEXT_EVAL_PATTERN.test(content)) return null;
+  return findFirstLine(
+    content,
+    /SAFEXEC_CONTEXT|I understand the risk|OPENCLAW_AGENT_CALL|SAFE_EXEC_AUTO_CONFIRM|eval\s+["']?\$command/,
+  );
+}
+
 function normalizeEnvName(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -753,6 +771,18 @@ function scanCodeFile(
       line: unsafePythonRcloneFilename.line,
       message: "Agent-controlled filename is written and passed to rclone without path validation.",
       evidence: unsafePythonRcloneFilename.text,
+    });
+  }
+
+  const confirmationBypass = findConfirmationBypass(content);
+  if (confirmationBypass) {
+    addFinding(findings, {
+      code: REASON_CODES.CONFIRMATION_BYPASS,
+      severity: "critical",
+      file: path,
+      line: confirmationBypass.line,
+      message: "Risky command approval can be bypassed through environment or context signals.",
+      evidence: confirmationBypass.text,
     });
   }
 
