@@ -51,7 +51,7 @@ export type CorpusRow = {
   schema_version?: string;
   corpus?: "skilltester-clawhub";
   source: string;
-  content_status: "fetched" | "missing" | string;
+  content_status: string;
   resolved: {
     owner?: string;
     slug?: string;
@@ -548,6 +548,7 @@ export async function readCorpusJsonl(corpusFile: string): Promise<CorpusRow[]> 
           `Failed to parse ${corpusFile}:${index + 1}: ${
             error instanceof Error ? error.message : String(error)
           }`,
+          { cause: error },
         );
       }
     });
@@ -561,7 +562,7 @@ function normalizedHfLabel(row: HfEvalHoldoutRow): NormalizedVerdict {
   return "unknown";
 }
 
-function securityLevelForHfLabel(label: NormalizedVerdict) {
+function securityLevelForHfLabel(label: NormalizedVerdict): string | undefined {
   switch (label) {
     case "benign":
       return "high security";
@@ -572,9 +573,13 @@ function securityLevelForHfLabel(label: NormalizedVerdict) {
     case "unknown":
       return undefined;
   }
+  return undefined;
 }
 
-function securityScoreForHfRow(row: HfEvalHoldoutRow, label: NormalizedVerdict) {
+function securityScoreForHfRow(
+  row: HfEvalHoldoutRow,
+  label: NormalizedVerdict,
+): number | undefined {
   const score =
     asNumber(row.score_consensus) ??
     asNumber(row.score_max) ??
@@ -592,6 +597,7 @@ function securityScoreForHfRow(row: HfEvalHoldoutRow, label: NormalizedVerdict) 
     case "unknown":
       return undefined;
   }
+  return undefined;
 }
 
 export function corpusRowFromHfEvalHoldoutRow(
@@ -1652,7 +1658,7 @@ async function mapWithConcurrency<T, R>(
   concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  const results = Array.from({ length: items.length }, () => undefined as R);
   let nextIndex = 0;
   const workerCount = Math.min(Math.max(1, concurrency), items.length);
 
