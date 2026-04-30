@@ -1,15 +1,26 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { internalQuery } from "./functions";
+import { internalAction, internalQuery } from "./functions";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
+const MAX_EXPORT_BATCH_PAGES = 20;
 const REDACTION_POLICY_VERSION = "public-signals-v1";
 const SOURCE_TABLES = ["skillVersions", "packageReleases"] as const;
 const SCANNER_SOURCES = ["static", "virustotal", "llm", "moderation_consensus"] as const;
 type StoredVtAnalysis = Doc<"skillVersions">["vtAnalysis"];
 type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
+type ArtifactExportRow =
+	| Awaited<ReturnType<typeof skillVersionPageToExportRows>>[number]
+	| Awaited<ReturnType<typeof packageReleasePageToExportRows>>[number];
+type ArtifactExportPage = {
+	page: ArtifactExportRow[];
+	isDone: boolean;
+	continueCursor: string;
+	exportMode: "public";
+};
 
 export const listArtifactExportPageInternal = internalQuery({
 	args: {
@@ -77,6 +88,48 @@ export const getArtifactExportBoundsInternal = internalQuery({
 	},
 });
 
+export const listArtifactExportBatchInternal = internalAction({
+	args: {
+		sourceKind: v.union(v.literal("skill"), v.literal("package")),
+		mode: v.optional(v.literal("public")),
+		createdAtGte: v.optional(v.number()),
+		createdAtLt: v.optional(v.number()),
+		paginationOpts: paginationOptsValidator,
+		pageCount: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const pageCount = Math.min(Math.max(1, Math.floor(args.pageCount)), MAX_EXPORT_BATCH_PAGES);
+		let cursor = args.paginationOpts.cursor;
+		const page: ArtifactExportPage["page"] = [];
+		let isDone = false;
+		for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+			const result: ArtifactExportPage = await ctx.runQuery(
+				internal.securityDataset.listArtifactExportPageInternal,
+				{
+					sourceKind: args.sourceKind,
+					mode: args.mode,
+					createdAtGte: args.createdAtGte,
+					createdAtLt: args.createdAtLt,
+					paginationOpts: {
+						cursor,
+						numItems: args.paginationOpts.numItems,
+					},
+				},
+			);
+			page.push(...result.page);
+			cursor = result.continueCursor;
+			isDone = result.isDone;
+			if (isDone) break;
+		}
+		return {
+			page,
+			isDone,
+			continueCursor: cursor,
+			exportMode: args.mode ?? "public",
+		};
+	},
+});
+
 export const getDatasetLineageInternal = internalQuery({
 	args: {
 		mode: v.optional(v.literal("public")),
@@ -90,6 +143,7 @@ export const getDatasetLineageInternal = internalQuery({
 			exportMode: args.mode ?? "public",
 			generatedAt: Date.now(),
 			maxExportPageSize: MAX_EXPORT_PAGE_SIZE,
+			maxExportBatchPages: MAX_EXPORT_BATCH_PAGES,
 			redactionPolicyVersion: REDACTION_POLICY_VERSION,
 			sourceTables: SOURCE_TABLES,
 			scannerSources: SCANNER_SOURCES,

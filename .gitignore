@@ -39,5 +39,7 @@ skills-lock.json
 !.agents/skills/
 !.agents/skills/convex*/
 !.agents/skills/convex*/**
+!.agents/skills/blacksmith-testbox/
+!.agents/skills/blacksmith-testbox/**
 skills/*
 .codex/*

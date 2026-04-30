@@ -4,6 +4,7 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { gunzipSync } from "node:zlib";
 import { artifactInputsFromConvexExportZip } from "./convexExport";
 import { parseConvexJsonMatching } from "./convexOutput";
 import { reserveExportInputs } from "./exportLimit";
@@ -37,6 +38,11 @@ type ConvexBounds = {
 	maxCreatedAt: number | null;
 };
 
+type CompressedConvexPage = {
+	encoding: "gzip-base64-json";
+	payload: string;
+};
+
 type Options = {
 	deployment: string | null;
 	prod: boolean;
@@ -45,6 +51,7 @@ type Options = {
 	mode: "public";
 	limit: number | null;
 	pageSize: number;
+	batchPages: number;
 	concurrency: number;
 	shards: number;
 	outDir: string;
@@ -82,9 +89,10 @@ type SnapshotWriters = {
 };
 
 const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_BATCH_PAGES = 5;
 const DEFAULT_CONCURRENCY = 6;
 const DEFAULT_SHARDS = 12;
-const DEFAULT_MAX_CONVEX_ATTEMPTS = 4;
+const DEFAULT_MAX_CONVEX_ATTEMPTS = 6;
 const DEFAULT_OUT_DIR = ".data/security-dataset/snapshots";
 const CONVEX_RUN_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
 const SOURCE_KINDS: SourceKind[] = ["skill", "package"];
@@ -158,10 +166,8 @@ function filterExportInputs(
 ) {
 	return inputs.filter((input) => {
 		if (sourceKind !== "all" && input.sourceKind !== sourceKind) return false;
-		if (timeWindow.createdAtGte !== undefined && input.createdAt < timeWindow.createdAtGte)
-			return false;
-		if (timeWindow.createdAtLt !== undefined && input.createdAt >= timeWindow.createdAtLt)
-			return false;
+		if (timeWindow.createdAtGte !== null && input.createdAt < timeWindow.createdAtGte) return false;
+		if (timeWindow.createdAtLt !== null && input.createdAt >= timeWindow.createdAtLt) return false;
 		return true;
 	});
 }
@@ -198,8 +204,11 @@ async function exportShard(input: {
 }) {
 	const { options, shard, state, writers } = input;
 	let cursor: string | null = null;
+	let batchPages = options.batchPages;
 	while (!isLimitReached(options, state)) {
-		const page = await runConvexPage(options, shard, cursor, options.pageSize);
+		const result = await runConvexPage(options, shard, cursor, options.pageSize, batchPages);
+		batchPages = result.batchPages;
+		const page = result.page;
 		const inputs = reserveExportInputs(page.page, state, options.limit);
 		if (inputs.length > 0) {
 			await processArtifactInputs({ inputs, state, writers });
@@ -217,20 +226,54 @@ async function runConvexPage(
 	shard: ExportShard,
 	cursor: string | null,
 	numItems: number,
-): Promise<ConvexPage> {
-	const args = {
-		sourceKind: shard.sourceKind,
-		mode: options.mode,
-		createdAtGte: shard.createdAtGte,
-		createdAtLt: shard.createdAtLt,
-		paginationOpts: { cursor, numItems },
-	};
-	return runConvexJson<ConvexPage>(
-		options,
-		"securityDataset:listArtifactExportPageInternal",
-		args,
-		isConvexPage,
-	);
+	batchPages: number,
+): Promise<{ page: ConvexPage; batchPages: number }> {
+	const functionName = "securityDatasetNode:listArtifactExportBatchCompressedInternal";
+	let pageCount = batchPages;
+
+	while (true) {
+		const args = {
+			sourceKind: shard.sourceKind,
+			mode: options.mode,
+			createdAtGte: shard.createdAtGte,
+			createdAtLt: shard.createdAtLt,
+			paginationOpts: { cursor, numItems },
+			pageCount,
+		};
+
+		let lastError: unknown = null;
+		for (let attempt = 1; attempt <= DEFAULT_MAX_CONVEX_ATTEMPTS; attempt += 1) {
+			try {
+				const compressed = await runConvexJsonOnce<CompressedConvexPage>(
+					options,
+					functionName,
+					args,
+					isCompressedConvexPage,
+				);
+				return { page: decodeCompressedConvexPage(compressed), batchPages: pageCount };
+			} catch (error) {
+				lastError = error;
+				if (isLikelyTruncatedConvexOutput(error) && pageCount > 1) break;
+				if (attempt === DEFAULT_MAX_CONVEX_ATTEMPTS) break;
+				console.error(
+					`[snapshot] retrying ${functionName} batch-pages=${pageCount} after attempt ${attempt}: ${errorMessage(error)}`,
+				);
+				await delay(attempt * 500);
+			}
+		}
+
+		if (isLikelyTruncatedConvexOutput(lastError) && pageCount > 1) {
+			const nextPageCount = Math.max(1, Math.floor(pageCount / 2));
+			console.error(
+				`[snapshot] ${shard.label} reducing batch-pages ${pageCount}->${nextPageCount}: ${errorMessage(lastError)}`,
+			);
+			pageCount = nextPageCount;
+			continue;
+		}
+
+		writeCommandErrorOutput(lastError);
+		throw lastError;
+	}
 }
 
 async function runConvexBounds(options: Options, sourceKind: SourceKind): Promise<ConvexBounds> {
@@ -248,17 +291,10 @@ async function runConvexJson<T>(
 	args: unknown,
 	validate: (value: unknown) => value is T,
 ): Promise<T> {
-	const commandArgs = buildConvexRunArgs(options, functionName, args);
 	let lastError: unknown = null;
 	for (let attempt = 1; attempt <= DEFAULT_MAX_CONVEX_ATTEMPTS; attempt += 1) {
 		try {
-			const result = await execFileAsync("bunx", commandArgs, {
-				cwd: process.cwd(),
-				encoding: "utf8",
-				env: convexRunEnv(),
-				maxBuffer: CONVEX_RUN_MAX_BUFFER_BYTES,
-			});
-			return parseConvexJsonMatching(result.stdout, validate);
+			return await runConvexJsonOnce(options, functionName, args, validate);
 		} catch (error) {
 			lastError = error;
 			if (attempt === DEFAULT_MAX_CONVEX_ATTEMPTS) break;
@@ -273,9 +309,40 @@ async function runConvexJson<T>(
 	throw lastError;
 }
 
+async function runConvexJsonOnce<T>(
+	options: Options,
+	functionName: string,
+	args: unknown,
+	validate: (value: unknown) => value is T,
+): Promise<T> {
+	const commandArgs = buildConvexRunArgs(options, functionName, args);
+	const result = await execFileAsync("bunx", commandArgs, {
+		cwd: process.cwd(),
+		encoding: "utf8",
+		env: convexRunEnv(),
+		maxBuffer: CONVEX_RUN_MAX_BUFFER_BYTES,
+	});
+	try {
+		return parseConvexJsonMatching(result.stdout, validate);
+	} catch (parseError) {
+		await writeDebugConvexOutput(functionName, result.stdout);
+		throw parseError;
+	}
+}
+
 function convexRunEnv() {
 	const { FORCE_COLOR: _forceColor, ...env } = process.env;
 	return { ...env, NO_COLOR: "1" };
+}
+
+async function writeDebugConvexOutput(functionName: string, stdout: string) {
+	const debugDir = process.env.SECURITY_DATASET_DEBUG_CONVEX_OUTPUT_DIR;
+	if (!debugDir) return;
+	await mkdir(debugDir, { recursive: true });
+	const safeFunctionName = functionName.replace(/[^a-zA-Z0-9_-]/g, "-");
+	const path = join(debugDir, `${Date.now()}-${process.pid}-${safeFunctionName}.stdout`);
+	await writeFile(path, stdout);
+	console.error(`[snapshot] wrote debug Convex stdout to ${path}`);
 }
 
 function buildManifest(input: {
@@ -465,6 +532,19 @@ function isConvexBounds(value: unknown): value is ConvexBounds {
 	);
 }
 
+function isCompressedConvexPage(value: unknown): value is CompressedConvexPage {
+	return (
+		isRecord(value) && value.encoding === "gzip-base64-json" && typeof value.payload === "string"
+	);
+}
+
+function decodeCompressedConvexPage(value: CompressedConvexPage) {
+	const json = gunzipSync(Buffer.from(value.payload, "base64")).toString("utf8");
+	const parsed: unknown = JSON.parse(json);
+	if (isConvexPage(parsed)) return parsed;
+	throw new Error("Invalid compressed Convex page response.");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
@@ -475,6 +555,10 @@ function delay(ms: number) {
 
 function errorMessage(error: unknown) {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function isLikelyTruncatedConvexOutput(error: unknown) {
+	return /Convex JSON output \(524288 bytes\)/.test(errorMessage(error));
 }
 
 function writeCommandErrorOutput(error: unknown) {
@@ -501,6 +585,7 @@ function parseArgs(args: string[]): Options {
 		mode: "public",
 		limit: null,
 		pageSize: DEFAULT_PAGE_SIZE,
+		batchPages: DEFAULT_BATCH_PAGES,
 		concurrency: DEFAULT_CONCURRENCY,
 		shards: DEFAULT_SHARDS,
 		outDir: DEFAULT_OUT_DIR,
@@ -523,6 +608,8 @@ function parseArgs(args: string[]): Options {
 			options.limit = readPositiveInt(readValue(args, ++index, arg), arg);
 		} else if (arg === "--page-size") {
 			options.pageSize = readPositiveInt(readValue(args, ++index, arg), arg);
+		} else if (arg === "--batch-pages") {
+			options.batchPages = readPositiveInt(readValue(args, ++index, arg), arg);
 		} else if (arg === "--concurrency") {
 			options.concurrency = readPositiveInt(readValue(args, ++index, arg), arg);
 		} else if (arg === "--shards") {
