@@ -12,13 +12,15 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.4.2";
+export const MODERATION_ENGINE_VERSION = "v2.4.5";
 
 export const REASON_CODES = {
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
   DYNAMIC_CODE: "suspicious.dynamic_code_execution",
   GENERATED_SOURCE_TEMPLATE: "suspicious.generated_source_template_injection",
   EXPOSED_RESOURCE_IDENTIFIER: "suspicious.exposed_resource_identifier",
+  DESTRUCTIVE_DELETE_COMMAND: "suspicious.destructive_delete_command",
+  UNSAFE_BROWSER_TEXT_INPUT: "suspicious.unsafe_browser_text_input",
   EXPOSED_SECRET_LITERAL: "suspicious.exposed_secret_literal",
   CREDENTIAL_HARVEST: "suspicious.env_credential_access",
   EXFILTRATION: "suspicious.potential_exfiltration",

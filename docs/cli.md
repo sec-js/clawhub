@@ -329,7 +329,7 @@ on:
 jobs:
   dry-run:
     if: github.event_name == 'pull_request'
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
     with:
       dry_run: true
 
@@ -338,7 +338,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
     with:
       dry_run: false
     secrets:
@@ -348,6 +348,7 @@ jobs:
 Notes:
 
 - The reusable workflow defaults `source` to the caller repo.
+- Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
 - Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.

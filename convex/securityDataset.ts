@@ -2,16 +2,21 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { query } from "./functions";
+import { internalQuery } from "./functions";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
+const REDACTION_POLICY_VERSION = "public-signals-v1";
+const SOURCE_TABLES = ["skillVersions", "packageReleases"] as const;
+const SCANNER_SOURCES = ["static", "virustotal", "llm", "moderation_consensus"] as const;
 type StoredVtAnalysis = Doc<"skillVersions">["vtAnalysis"];
 type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
 
-export const listArtifactExportPage = query({
+export const listArtifactExportPageInternal = internalQuery({
 	args: {
 		sourceKind: v.union(v.literal("skill"), v.literal("package")),
 		mode: v.optional(v.literal("public")),
+		createdAtGte: v.optional(v.number()),
+		createdAtLt: v.optional(v.number()),
 		paginationOpts: paginationOptsValidator,
 	},
 	handler: async (ctx, args) => {
@@ -20,7 +25,19 @@ export const listArtifactExportPage = query({
 			numItems: Math.min(args.paginationOpts.numItems, MAX_EXPORT_PAGE_SIZE),
 		};
 		if (args.sourceKind === "skill") {
-			const page = await ctx.db.query("skillVersions").order("asc").paginate(paginationOpts);
+			const page = await ctx.db
+				.query("skillVersions")
+				.withIndex("by_active_created", (q) => {
+					const range = q.eq("softDeletedAt", undefined);
+					if (args.createdAtGte !== undefined && args.createdAtLt !== undefined) {
+						return range.gte("createdAt", args.createdAtGte).lt("createdAt", args.createdAtLt);
+					}
+					if (args.createdAtGte !== undefined) return range.gte("createdAt", args.createdAtGte);
+					if (args.createdAtLt !== undefined) return range.lt("createdAt", args.createdAtLt);
+					return range;
+				})
+				.order("asc")
+				.paginate(paginationOpts);
 			return {
 				page: await skillVersionPageToExportRows(ctx, page.page),
 				isDone: page.isDone,
@@ -29,7 +46,19 @@ export const listArtifactExportPage = query({
 			};
 		}
 
-		const page = await ctx.db.query("packageReleases").order("asc").paginate(paginationOpts);
+		const page = await ctx.db
+			.query("packageReleases")
+			.withIndex("by_active_created", (q) => {
+				const range = q.eq("softDeletedAt", undefined);
+				if (args.createdAtGte !== undefined && args.createdAtLt !== undefined) {
+					return range.gte("createdAt", args.createdAtGte).lt("createdAt", args.createdAtLt);
+				}
+				if (args.createdAtGte !== undefined) return range.gte("createdAt", args.createdAtGte);
+				if (args.createdAtLt !== undefined) return range.lt("createdAt", args.createdAtLt);
+				return range;
+			})
+			.order("asc")
+			.paginate(paginationOpts);
 		return {
 			page: await packageReleasePageToExportRows(ctx, page.page),
 			isDone: page.isDone,
@@ -39,10 +68,75 @@ export const listArtifactExportPage = query({
 	},
 });
 
+export const getArtifactExportBoundsInternal = internalQuery({
+	args: {
+		sourceKind: v.union(v.literal("skill"), v.literal("package")),
+	},
+	handler: async (ctx, args) => {
+		return await getActiveCreatedBounds(ctx, args.sourceKind);
+	},
+});
+
+export const getDatasetLineageInternal = internalQuery({
+	args: {
+		mode: v.optional(v.literal("public")),
+	},
+	handler: async (ctx, args) => {
+		const sourceBounds = [
+			await getActiveCreatedBounds(ctx, "skill"),
+			await getActiveCreatedBounds(ctx, "package"),
+		];
+		return {
+			exportMode: args.mode ?? "public",
+			generatedAt: Date.now(),
+			maxExportPageSize: MAX_EXPORT_PAGE_SIZE,
+			redactionPolicyVersion: REDACTION_POLICY_VERSION,
+			sourceTables: SOURCE_TABLES,
+			scannerSources: SCANNER_SOURCES,
+			sourceBounds,
+		};
+	},
+});
+
+async function getActiveCreatedBounds(ctx: QueryCtx, sourceKind: "skill" | "package") {
+	if (sourceKind === "skill") {
+		const first = await ctx.db
+			.query("skillVersions")
+			.withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+			.order("asc")
+			.first();
+		const last = await ctx.db
+			.query("skillVersions")
+			.withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+			.order("desc")
+			.first();
+		return {
+			sourceKind,
+			minCreatedAt: first?.createdAt ?? null,
+			maxCreatedAt: last?.createdAt ?? null,
+		};
+	}
+
+	const first = await ctx.db
+		.query("packageReleases")
+		.withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+		.order("asc")
+		.first();
+	const last = await ctx.db
+		.query("packageReleases")
+		.withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+		.order("desc")
+		.first();
+	return {
+		sourceKind,
+		minCreatedAt: first?.createdAt ?? null,
+		maxCreatedAt: last?.createdAt ?? null,
+	};
+}
+
 async function skillVersionPageToExportRows(ctx: QueryCtx, versions: Array<Doc<"skillVersions">>) {
 	const rows = [];
 	for (const version of versions) {
-		if (version.softDeletedAt) continue;
 		const skill = await ctx.db.get(version.skillId);
 		if (!skill || skill.softDeletedAt) continue;
 		rows.push({
@@ -85,9 +179,8 @@ async function packageReleasePageToExportRows(
 ) {
 	const rows = [];
 	for (const release of releases) {
-		if (release.softDeletedAt) continue;
 		const pkg = await ctx.db.get(release.packageId);
-		if (!pkg || pkg.softDeletedAt) continue;
+		if (!pkg || pkg.softDeletedAt || pkg.channel === "private") continue;
 		rows.push({
 			sourceKind: "package" as const,
 			sourceDocId: release._id,

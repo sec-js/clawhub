@@ -89,6 +89,75 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("flags shell-capable child process calls", () => {
+    const result = runStaticModerationScan({
+      slug: "demo",
+      displayName: "Demo",
+      summary: "A helper skill",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "mcp-server.js", size: 128 }],
+      fileContents: [
+        {
+          path: "mcp-server.js",
+          content:
+            'const { execSync } = require("child_process");\nexecSync(`python3 helper.py ${input}`);',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag literal execFileSync helper adapters", () => {
+    const result = runStaticModerationScan({
+      slug: "ultra-memory",
+      displayName: "Ultra Memory",
+      summary: "A memory MCP helper",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/mcp-server.js", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/mcp-server.js",
+          content: [
+            'const { execFileSync } = require("child_process");',
+            'const scriptPath = path.join(__dirname, "init.py");',
+            'execFileSync("python3", [scriptPath, ...args], {',
+            '  encoding: "utf-8",',
+            '  timeout: 15000,',
+            "});",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("still flags execFileSync when shell mode is enabled", () => {
+    const result = runStaticModerationScan({
+      slug: "demo",
+      displayName: "Demo",
+      summary: "A helper skill",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "mcp-server.js", size: 128 }],
+      fileContents: [
+        {
+          path: "mcp-server.js",
+          content:
+            'const { execFileSync } = require("child_process");\nexecFileSync("python3", [scriptPath, input], { shell: true });',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
   it("does not flag declared env vars sent to the intended API", () => {
     const result = runStaticModerationScan({
       slug: "todoist",
@@ -433,6 +502,185 @@ describe("moderationEngine", () => {
     });
 
     expect(result.reasonCodes).not.toContain("malicious.install_terminal_payload");
+    expect(result.status).toBe("clean");
+  });
+
+  it("flags destructive troubleshooting deletes without a confirmation gate", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Speech-to-text helper",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "If reinstalling is needed, run:",
+            "```bash",
+            "# Reinstall",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "/root/.openclaw/workspace/skills/stt-simple/install.sh",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("allows destructive troubleshooting deletes with an explicit confirmation gate", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Speech-to-text helper",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "Before deleting the environment, ask the user for explicit confirmation.",
+            "Only continue after the user answers yes.",
+            "```bash",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "/root/.openclaw/workspace/skills/stt-simple/install.sh",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not treat loose confirm prose as a deletion gate", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Speech-to-text helper",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "Confirm the backup exists before proceeding.",
+            "```bash",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "/root/.openclaw/workspace/skills/stt-simple/install.sh",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag ordinary project cleanup commands", () => {
+    const result = runStaticModerationScan({
+      slug: "build-helper",
+      displayName: "Build Helper",
+      summary: "Cleans local build outputs",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 256 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: "Reset the project cache with `rm -rf node_modules dist .turbo`.",
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("clean");
+  });
+
+  it("flags shell positional input passed directly to browser typing", () => {
+    const result = runStaticModerationScan({
+      slug: "wechat-helper",
+      displayName: "WeChat Helper",
+      summary: "Send WeChat messages",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 1024 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "```bash",
+            'MESSAGE="$1"',
+            'browser action=act kind="type" ref="input-area" text="$MESSAGE" targetId="$TARGET_ID"',
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.unsafe_browser_text_input");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("checks every positional shell assignment before browser typing", () => {
+    const result = runStaticModerationScan({
+      slug: "wechat-helper",
+      displayName: "WeChat Helper",
+      summary: "Send WeChat messages",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "send.sh", size: 1024 }],
+      fileContents: [
+        {
+          path: "send.sh",
+          content: [
+            'TARGET_ID="$1"',
+            'MESSAGE="$2"',
+            'browser action=act kind="type" ref="input-area" text="$MESSAGE" targetId="$TARGET_ID"',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.unsafe_browser_text_input");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("allows browser typing after basic shell input validation", () => {
+    const result = runStaticModerationScan({
+      slug: "wechat-helper",
+      displayName: "WeChat Helper",
+      summary: "Send WeChat messages",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "send.sh", size: 1024 }],
+      fileContents: [
+        {
+          path: "send.sh",
+          content: [
+            'MESSAGE="$1"',
+            "if [ ${#MESSAGE} -gt 2000 ]; then",
+            '  echo "message too long"',
+            "  exit 1",
+            "fi",
+            'browser action=act kind="type" ref="input-area" text="$MESSAGE" targetId="$TARGET_ID"',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.unsafe_browser_text_input");
     expect(result.status).toBe("clean");
   });
 

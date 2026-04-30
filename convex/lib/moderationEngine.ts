@@ -74,6 +74,10 @@ const HARDCODED_CONNECTION_ID_PATTERN =
   /["']connection_id["']\s*:\s*["'][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}["']/i;
 const GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN =
   /https?:\/\/[^\s"'`]*\/spreadsheets\/([A-Za-z0-9_-]{20,})\/[^\s"'`]*/i;
+const DESTRUCTIVE_DELETE_PATTERN =
+  /\brm\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\s+(["']?)(\/root\/\.openclaw\/|\/home\/[^/\s"'`]+\/\.openclaw\/|\/Users\/[^/\s"'`]+\/\.openclaw\/|~\/\.openclaw\/|\$HOME\/\.openclaw\/|\$\{HOME\}\/\.openclaw\/|\/etc\/|\/usr\/|\/opt\/|\/Library\/|\/Applications\/)[^\s"'`;|&)]*\1/i;
+const SHELL_POSITIONAL_ASSIGNMENT_PATTERN =
+  /^\s*([A-Z_][A-Z0-9_]*)=(["']?)\$(?:[1-9][0-9]*|@|\*)\2\s*(?:#.*)?$/gm;
 const SECRET_ASSIGNMENT_PATTERN =
   /\b(?:api[_\s-]?(?:secret|key)|secret[_\s-]?key|access[_\s-]?token|auth[_\s-]?token|bearer[_\s-]?token|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 const AUTH_HEADER_SECRET_PATTERN =
@@ -132,6 +136,65 @@ function findHardcodedSecret(content: string) {
   return null;
 }
 
+function hasNearbyConfirmationGate(lines: string[], commandIndex: number) {
+  const start = Math.max(0, commandIndex - 8);
+  const context = lines.slice(start, commandIndex + 1).join("\n");
+  return [
+    /\bask\s+(?:the\s+)?user\b.{0,120}\b(?:confirm|confirmation|approve|approval|continue|yes)\b/is,
+    /\b(?:prompt\s+for|require|request|obtain)\s+(?:explicit\s+)?(?:user\s+)?(?:confirmation|approval)\b/is,
+    /\buser\s+(?:confirmation|approval)\b/is,
+    /\bcontinue\?\s*\(?(?:yes\/no|y\/n)\)?/is,
+    /\breply\s+["']?yes["']?\b/is,
+    /\bonly\s+(?:continue\s+)?after\s+(?:the\s+)?user\b.{0,80}\b(?:confirms?|approves?|answers?\s+yes)\b/is,
+  ].some((pattern) => pattern.test(context));
+}
+
+function findUnguardedDestructiveDelete(content: string) {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!DESTRUCTIVE_DELETE_PATTERN.test(lines[i])) continue;
+    if (hasNearbyConfirmationGate(lines, i)) continue;
+    return { line: i + 1, text: lines[i] };
+  }
+  return null;
+}
+
+function hasShellVariableValidation(content: string, variable: string, useIndex: number) {
+  const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const beforeUse = content.slice(0, useIndex);
+  const variableReference = String.raw`(?:\$\{${escaped}\}|\$${escaped})`;
+  const lengthCheck = new RegExp(String.raw`\$\{#${escaped}\}\s*(?:-[a-z]\s+)?(?:[<>!=]=?|-[gl][te])`, "m");
+  const controlCharStrip = new RegExp(
+    String.raw`(?:tr\s+-d\s+["']?\\(?:000|x00).{0,80}\\(?:037|x1[fF]|177|x7[fF])|${escaped}\s*=.*tr\s+-d)`,
+    "s",
+  );
+  const explicitValidation = new RegExp(
+    String.raw`(?:validate|sanitize|strip|clean)[A-Za-z0-9_ -]{0,60}${variableReference}|${variableReference}.{0,60}(?:validate|sanitize|strip|clean)`,
+    "is",
+  );
+
+  return lengthCheck.test(beforeUse) || controlCharStrip.test(beforeUse) || explicitValidation.test(beforeUse);
+}
+
+function findUnsafeBrowserTextInput(content: string) {
+  for (const assignment of content.matchAll(SHELL_POSITIONAL_ASSIGNMENT_PATTERN)) {
+    const variable = assignment[1];
+    if (!variable) continue;
+
+    const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const browserTextPattern = new RegExp(
+      String.raw`\bbrowser\s+action=act\b[^\n]*\bkind=["']?type["']?[^\n]*\btext=(?:"\$${escaped}"|'\$${escaped}'|\$${escaped})(?![A-Za-z0-9_])`,
+      "i",
+    );
+    const match = content.match(browserTextPattern);
+    if (!match || match.index === undefined) continue;
+    if (hasShellVariableValidation(content, variable, match.index)) continue;
+
+    return findLineAtIndex(content, match.index);
+  }
+  return null;
+}
+
 function addFinding(
   findings: ModerationFinding[],
   finding: Omit<ModerationFinding, "evidence"> & { evidence: string },
@@ -155,6 +218,73 @@ function findLineAtIndex(content: string, index: number) {
   const nextNewline = content.indexOf("\n", index);
   const lineEnd = nextNewline === -1 ? content.length : nextNewline;
   return { line, text: content.slice(lineStart, lineEnd) };
+}
+
+function findCallEnd(content: string, openParenIndex: number) {
+  let depth = 0;
+  let quote: '"' | "'" | "`" | undefined;
+  let escaped = false;
+
+  for (let i = openParenIndex; i < content.length; i += 1) {
+    const char = content[i];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+
+  return content.length;
+}
+
+function isSafeLiteralExecFileCall(callText: string) {
+  const match = callText.match(/\b(execFile|execFileSync)\s*\(\s*(["'])([^"']+)\2\s*,\s*\[/);
+  if (!match) return false;
+  if (/\bshell\s*:\s*true\b/.test(callText)) return false;
+
+  const executable = match[3]?.trim().toLowerCase();
+  if (!executable) return false;
+  const basename = executable.split(/[\\/]/).at(-1) ?? executable;
+  return !/^(?:sh|bash|zsh|fish|cmd|powershell|pwsh)$/.test(basename);
+}
+
+function findDangerousChildProcessCall(content: string) {
+  if (!/child_process/.test(content)) return null;
+
+  const execPattern = /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/g;
+  for (const match of content.matchAll(execPattern)) {
+    const callName = match[1];
+    const callIndex = match.index;
+    if (callIndex === undefined || !callName) continue;
+
+    if (callName === "execFile" || callName === "execFileSync") {
+      const openParenIndex = content.indexOf("(", callIndex);
+      const callEnd = findCallEnd(content, openParenIndex);
+      const callText = content.slice(callIndex, callEnd);
+      if (isSafeLiteralExecFileCall(callText)) continue;
+    }
+
+    return findLineAtIndex(content, callIndex);
+  }
+
+  return null;
 }
 
 function normalizeEnvName(value: unknown) {
@@ -234,17 +364,15 @@ function scanCodeFile(
 ) {
   if (!CODE_EXTENSION.test(path)) return;
 
-  const hasChildProcess = /child_process/.test(content);
-  const execPattern = /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/;
-  if (hasChildProcess && execPattern.test(content)) {
-    const match = findFirstLine(content, execPattern);
+  const dangerousChildProcessCall = findDangerousChildProcessCall(content);
+  if (dangerousChildProcessCall) {
     addFinding(findings, {
       code: REASON_CODES.DANGEROUS_EXEC,
       severity: "critical",
       file: path,
-      line: match.line,
+      line: dangerousChildProcessCall.line,
       message: "Shell command execution detected (child_process).",
-      evidence: match.text,
+      evidence: dangerousChildProcessCall.text,
     });
   }
 
@@ -257,6 +385,18 @@ function scanCodeFile(
       line: match.line,
       message: "Dynamic code execution detected.",
       evidence: match.text,
+    });
+  }
+
+  const unsafeBrowserTextInput = findUnsafeBrowserTextInput(content);
+  if (unsafeBrowserTextInput) {
+    addFinding(findings, {
+      code: REASON_CODES.UNSAFE_BROWSER_TEXT_INPUT,
+      severity: "warn",
+      file: path,
+      line: unsafeBrowserTextInput.line,
+      message: "Shell positional input is typed into browser automation without validation.",
+      evidence: unsafeBrowserTextInput.text,
     });
   }
 
@@ -366,6 +506,30 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       line: match.line,
       message: "Install prompt contains an obfuscated terminal payload.",
       evidence: match.text,
+    });
+  }
+
+  const destructiveDelete = findUnguardedDestructiveDelete(content);
+  if (destructiveDelete) {
+    addFinding(findings, {
+      code: REASON_CODES.DESTRUCTIVE_DELETE_COMMAND,
+      severity: "warn",
+      file: path,
+      line: destructiveDelete.line,
+      message: "Documentation contains a destructive delete command without an explicit confirmation gate.",
+      evidence: destructiveDelete.text,
+    });
+  }
+
+  const unsafeBrowserTextInput = findUnsafeBrowserTextInput(content);
+  if (unsafeBrowserTextInput) {
+    addFinding(findings, {
+      code: REASON_CODES.UNSAFE_BROWSER_TEXT_INPUT,
+      severity: "warn",
+      file: path,
+      line: unsafeBrowserTextInput.line,
+      message: "Shell positional input is typed into browser automation without validation.",
+      evidence: unsafeBrowserTextInput.text,
     });
   }
 
