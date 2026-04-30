@@ -181,4 +181,4 @@ jobs:
 
       - name: Smoke test production UI
         if: needs.validate-deploy-request.outputs.run_smoke == 'true'
-        run: bunx playwright test e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
+        run: bunx playwright test --workers=1 e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
