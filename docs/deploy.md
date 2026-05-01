@@ -130,8 +130,6 @@ export CLAWHUB_REGISTRY=https://your-site.example
 ## 5) Post-deploy checks
 
 ```bash
-curl -i "https://<site>/healthz"
-curl -i "https://<site>/readyz"
 curl -i "https://<site>/api/v1/search?q=test"
 curl -i "https://<site>/api/v1/skills/gifgrep"
 ```

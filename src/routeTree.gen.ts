@@ -13,12 +13,10 @@ import { Route as UploadRouteImport } from './routes/upload'
 import { Route as StarsRouteImport } from './routes/stars'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
-import { Route as ReadyzRouteImport } from './routes/readyz'
 import { Route as PublishSkillRouteImport } from './routes/publish-skill'
 import { Route as PublishPluginRouteImport } from './routes/publish-plugin'
 import { Route as ManagementRouteImport } from './routes/management'
 import { Route as ImportRouteImport } from './routes/import'
-import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
@@ -61,11 +59,6 @@ const SearchRoute = SearchRouteImport.update({
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReadyzRoute = ReadyzRouteImport.update({
-  id: '/readyz',
-  path: '/readyz',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PublishSkillRoute = PublishSkillRouteImport.update({
   id: '/publish-skill',
   path: '/publish-skill',
@@ -84,11 +77,6 @@ const ManagementRoute = ManagementRouteImport.update({
 const ImportRoute = ImportRouteImport.update({
   id: '/import',
   path: '/import',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HealthzRoute = HealthzRouteImport.update({
-  id: '/healthz',
-  path: '/healthz',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -204,12 +192,10 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
-  '/healthz': typeof HealthzRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
-  '/readyz': typeof ReadyzRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/stars': typeof StarsRoute
@@ -237,12 +223,10 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
-  '/healthz': typeof HealthzRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
-  '/readyz': typeof ReadyzRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/stars': typeof StarsRoute
@@ -271,12 +255,10 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
-  '/healthz': typeof HealthzRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
-  '/readyz': typeof ReadyzRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/stars': typeof StarsRoute
@@ -306,12 +288,10 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/dashboard'
-    | '/healthz'
     | '/import'
     | '/management'
     | '/publish-plugin'
     | '/publish-skill'
-    | '/readyz'
     | '/search'
     | '/settings'
     | '/stars'
@@ -339,12 +319,10 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/dashboard'
-    | '/healthz'
     | '/import'
     | '/management'
     | '/publish-plugin'
     | '/publish-skill'
-    | '/readyz'
     | '/search'
     | '/settings'
     | '/stars'
@@ -372,12 +350,10 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/dashboard'
-    | '/healthz'
     | '/import'
     | '/management'
     | '/publish-plugin'
     | '/publish-skill'
-    | '/readyz'
     | '/search'
     | '/settings'
     | '/stars'
@@ -406,12 +382,10 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
-  HealthzRoute: typeof HealthzRoute
   ImportRoute: typeof ImportRoute
   ManagementRoute: typeof ManagementRoute
   PublishPluginRoute: typeof PublishPluginRoute
   PublishSkillRoute: typeof PublishSkillRoute
-  ReadyzRoute: typeof ReadyzRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
   StarsRoute: typeof StarsRoute
@@ -462,13 +436,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/readyz': {
-      id: '/readyz'
-      path: '/readyz'
-      fullPath: '/readyz'
-      preLoaderRoute: typeof ReadyzRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/publish-skill': {
       id: '/publish-skill'
       path: '/publish-skill'
@@ -495,13 +462,6 @@ declare module '@tanstack/react-router' {
       path: '/import'
       fullPath: '/import'
       preLoaderRoute: typeof ImportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/healthz': {
-      id: '/healthz'
-      path: '/healthz'
-      fullPath: '/healthz'
-      preLoaderRoute: typeof HealthzRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -685,12 +645,10 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,
-  HealthzRoute: HealthzRoute,
   ImportRoute: ImportRoute,
   ManagementRoute: ManagementRoute,
   PublishPluginRoute: PublishPluginRoute,
   PublishSkillRoute: PublishSkillRoute,
-  ReadyzRoute: ReadyzRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
   StarsRoute: StarsRoute,

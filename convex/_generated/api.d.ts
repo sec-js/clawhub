@@ -38,7 +38,6 @@ import type * as httpApiV1_transfersV1 from "../httpApiV1/transfersV1.js";
 import type * as httpApiV1_usersV1 from "../httpApiV1/usersV1.js";
 import type * as httpApiV1_whoamiV1 from "../httpApiV1/whoamiV1.js";
 import type * as httpPreflight from "../httpPreflight.js";
-import type * as httpProbes from "../httpProbes.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
@@ -164,7 +163,6 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/usersV1": typeof httpApiV1_usersV1;
   "httpApiV1/whoamiV1": typeof httpApiV1_whoamiV1;
   httpPreflight: typeof httpPreflight;
-  httpProbes: typeof httpProbes;
   leaderboards: typeof leaderboards;
   "lib/access": typeof lib_access;
   "lib/apiTokenAuth": typeof lib_apiTokenAuth;

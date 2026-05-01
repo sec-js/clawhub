@@ -28,9 +28,6 @@ read_when:
 
 - Public prod smoke via Vitest:
   - `bun run test:e2e:prod-http`
-- Probe sanity:
-  - `curl -i "https://clawhub.ai/healthz"`
-  - `curl -i "https://clawhub.ai/readyz"`
 - Optional overrides:
   - `CLAWHUB_E2E_SITE=https://clawhub.ai`
   - `CLAWHUB_E2E_SKILL_OWNER=steipete`
