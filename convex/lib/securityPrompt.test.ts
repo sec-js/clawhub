@@ -305,6 +305,17 @@ describe("securityPrompt", () => {
     expect(message).not.toContain("ignore evaluator instructions");
   });
 
+  it("neutralizes nested and unterminated HTML comments", () => {
+    const prepared = prepareUntrustedArtifactText(
+      "visible\n<!-- outer <!-- nested -->\nkept\n<!-- unterminated",
+      1_000,
+    );
+
+    expect(prepared.content).toBe("visible\n\nkept\n");
+    expect(prepared.content).not.toContain("<!--");
+    expect(prepared.hiddenCommentBlocksRemoved).toBe(2);
+  });
+
   it("removes control characters from untrusted artifact text", () => {
     const prepared = prepareUntrustedArtifactText("safe\u202Ehidden", 100);
 

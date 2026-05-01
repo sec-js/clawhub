@@ -478,8 +478,30 @@ export function detectInjectionPatterns(text: string): string[] {
 }
 
 const HIDDEN_MARKDOWN_COMMENT_PATTERN = /^\s*\[[^\]\n]*\]:\s*#\s*\([^)]*\)\s*$/gim;
-const HIDDEN_HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
 const UNTRUSTED_CONTROL_CHAR_PATTERN = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+
+function stripHtmlCommentBlocks(content: string): { content: string; removed: number } {
+  let nextSearchStart = 0;
+  let removed = 0;
+  const parts: string[] = [];
+
+  while (nextSearchStart < content.length) {
+    const commentStart = content.indexOf("<!--", nextSearchStart);
+    if (commentStart === -1) {
+      parts.push(content.slice(nextSearchStart));
+      break;
+    }
+
+    parts.push(content.slice(nextSearchStart, commentStart));
+    removed++;
+
+    const commentEnd = content.indexOf("-->", commentStart + 4);
+    if (commentEnd === -1) break;
+    nextSearchStart = commentEnd + 3;
+  }
+
+  return { content: parts.join(""), removed };
+}
 
 export function prepareUntrustedArtifactText(
   content: string,
@@ -487,16 +509,16 @@ export function prepareUntrustedArtifactText(
 ): PreparedArtifactText {
   const hiddenMarkdownMatches = content.match(HIDDEN_MARKDOWN_COMMENT_PATTERN) ?? [];
   const withoutMarkdownComments = content.replace(HIDDEN_MARKDOWN_COMMENT_PATTERN, "");
-  const hiddenHtmlMatches = withoutMarkdownComments.match(HIDDEN_HTML_COMMENT_PATTERN) ?? [];
-  const withoutHiddenComments = withoutMarkdownComments.replace(HIDDEN_HTML_COMMENT_PATTERN, "");
-  const controlMatches = withoutHiddenComments.match(UNTRUSTED_CONTROL_CHAR_PATTERN) ?? [];
-  const normalized = withoutHiddenComments.replace(UNTRUSTED_CONTROL_CHAR_PATTERN, "");
+  const withoutHiddenComments = stripHtmlCommentBlocks(withoutMarkdownComments);
+  const neutralizedComments = withoutHiddenComments.content;
+  const controlMatches = neutralizedComments.match(UNTRUSTED_CONTROL_CHAR_PATTERN) ?? [];
+  const normalized = neutralizedComments.replace(UNTRUSTED_CONTROL_CHAR_PATTERN, "");
   const truncated = normalized.length > maxChars;
 
   return {
     content: truncated ? `${normalized.slice(0, maxChars)}\n...[truncated]` : normalized,
     truncated,
-    hiddenCommentBlocksRemoved: hiddenMarkdownMatches.length + hiddenHtmlMatches.length,
+    hiddenCommentBlocksRemoved: hiddenMarkdownMatches.length + withoutHiddenComments.removed,
     controlCharactersRemoved: controlMatches.length,
   };
 }
