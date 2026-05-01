@@ -256,9 +256,7 @@ describe("securityPrompt", () => {
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
       "Start with a plain artifact-coherence review",
     );
-    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
-      "Do not hunt for every ASI category",
-    );
+    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("Do not hunt for every ASI category");
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(
       'The internal verdict value "suspicious" is the user-facing Review bucket',
     );
@@ -276,6 +274,9 @@ describe("securityPrompt", () => {
   it("includes static scan and capability signals in skill eval input", () => {
     const message = assembleSkillEvalUserMessage(baseCtx);
 
+    expect(message).toContain("<skill_data>");
+    expect(message).toContain("</skill_data>");
+    expect(message).toContain('<artifact path="SKILL.md" type="runtime_instructions"><![CDATA[');
     expect(message).toContain("### Static scan signals");
     expect(message).toContain("suspicious.env_credential_access");
     expect(message).toContain("WALLET_API_KEY");
