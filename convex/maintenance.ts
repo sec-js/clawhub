@@ -2322,6 +2322,7 @@ export const backfillDigestNormalizedSearchFields = internalMutation({
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     delayMs: v.optional(v.number()),
+    scheduleNext: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
@@ -2344,7 +2345,7 @@ export const backfillDigestNormalizedSearchFields = internalMutation({
       patched++;
     }
 
-    if (!isDone) {
+    if (!isDone && args.scheduleNext !== false) {
       await ctx.scheduler.runAfter(
         delayMs,
         internal.maintenance.backfillDigestNormalizedSearchFields,
@@ -2352,6 +2353,7 @@ export const backfillDigestNormalizedSearchFields = internalMutation({
           cursor: continueCursor,
           batchSize: args.batchSize,
           delayMs: args.delayMs,
+          scheduleNext: args.scheduleNext,
         },
       );
     }
