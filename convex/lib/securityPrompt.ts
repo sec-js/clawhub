@@ -382,7 +382,7 @@ Assign each finding to one of these risk_bucket values:
 Do not classify a skill as suspicious only because it uses files, commands, credentials, network access, memory, package installs, provider APIs, or external tools. Judge whether those behaviors are coherent with the stated purpose and clearly disclosed.
 
 Expected, disclosed, purpose-aligned integration behavior should usually be a note, not a concern, and notes alone should not make the final verdict suspicious unless they combine into concrete ambiguity or overbreadth. Apply these calibrations:
-- CLI/package install or local command execution is a note when it is central to the stated purpose. Escalate only when hidden, unrelated, auto-executed, privileged, obfuscated, or paired with concrete outside-provenance risk.
+- CLI/package install or local command execution is a note when it is central to the stated purpose. Escalate only when hidden, unrelated, auto-executed, privileged, obfuscated, or paired with concrete untrusted-provenance risk.
 - API keys, OAuth, login, cookies, or provider credentials are notes when they are expected for the integrated service and the artifacts do not show logging, hardcoding, unrelated access, unexpected transmission, or over-scoped use.
 - External API/provider calls are notes when disclosed and purpose-aligned. Escalate only when hidden, unrelated, automatic with sensitive local/user data, or materially misrepresented.
 - Downloads and file writes are notes when user-directed and scoped. Escalate for path traversal, protected-path writes, silent execution, unsafe file handling, or automatic sharing.
