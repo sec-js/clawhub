@@ -82,6 +82,15 @@ async function fetchHtml(pathname: string) {
   return response.text();
 }
 
+async function fetchJson(pathname: string) {
+  const response = await fetchWithRetry(new URL(pathname, getSiteBase()), {
+    headers: { Accept: "application/json" },
+  });
+  expect(response.ok).toBe(true);
+  expect(response.headers.get("content-type")).toContain("application/json");
+  return response;
+}
+
 type SkillDetailResponse = {
   skill: { slug: string; displayName: string; summary: string | null };
   latestVersion: { version: string | null } | null;
@@ -108,6 +117,20 @@ async function fetchSkillDetail() {
 }
 
 describe("prod http smoke", () => {
+  it("serves health and readiness probes", async () => {
+    for (const probe of ["healthz", "readyz"] as const) {
+      const response = await fetchJson(`/${probe}`);
+
+      expect(response.headers.get("cache-control")).toContain("no-store");
+      await expect(response.json()).resolves.toMatchObject({
+        ok: true,
+        status: "ok",
+        service: "clawhub",
+        probe,
+      });
+    }
+  });
+
   it("serves the home page shell from prod", async () => {
     const html = await fetchHtml("/");
 

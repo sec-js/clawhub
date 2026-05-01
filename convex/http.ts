@@ -44,10 +44,23 @@ import {
   whoamiV1Http,
 } from "./httpApiV1";
 import { preflightHandler } from "./httpPreflight";
+import { healthzHttp, readyzHttp } from "./httpProbes";
 
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
+
+http.route({
+  path: "/healthz",
+  method: "GET",
+  handler: healthzHttp,
+});
+
+http.route({
+  path: "/readyz",
+  method: "GET",
+  handler: readyzHttp,
+});
 
 http.route({
   path: ApiRoutes.download,
