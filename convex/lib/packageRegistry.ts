@@ -322,9 +322,6 @@ export function extractCodePluginArtifacts(params: {
   const serviceNames = uniq(normalizeNamedList(params.pluginManifest.services));
   const bundledSkills = uniq(normalizeNamedList(params.pluginManifest.bundledSkills));
   const hostTargets = uniq(normalizeStringList(openclaw?.hostTargets));
-  if (hostTargets.length === 0) {
-    throw new ConvexError("Code plugins must declare openclaw.hostTargets");
-  }
   const environment = isRecord(openclaw?.environment) ? openclaw.environment : undefined;
   const environmentTags = extractEnvironmentCapabilityTags(environment);
 
@@ -409,9 +406,6 @@ export function extractBundlePluginArtifacts(params: {
     (typeof openclaw?.bundleFormat === "string" && openclaw.bundleFormat.trim()) ||
     params.bundleMetadata?.format?.trim() ||
     "generic";
-  if (hostTargets.length === 0) {
-    throw new ConvexError("Bundle plugins must declare at least one host target");
-  }
 
   const capabilities: PackageCapabilitySummary = {
     executesCode: false,

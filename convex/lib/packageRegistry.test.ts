@@ -78,32 +78,32 @@ describe("packageRegistry", () => {
     expect(result.verification.scanStatus).toBe("not-run");
   });
 
-  it("requires explicit environment metadata for code plugins", () => {
-    expect(() =>
-      extractCodePluginArtifacts({
-        packageName: "demo-plugin",
-        packageJson: {
-          name: "demo-plugin",
-          openclaw: {
-            extensions: ["./dist/index.js"],
-            hostTargets: ["darwin-arm64"],
-            compat: { pluginApi: "^1.0.0" },
-            build: { openclawVersion: "2026.3.14" },
-            configSchema: { type: "object" },
-          },
+  it("allows missing host and environment metadata for code plugins", () => {
+    const result = extractCodePluginArtifacts({
+      packageName: "demo-plugin",
+      packageJson: {
+        name: "demo-plugin",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: "^1.0.0" },
+          build: { openclawVersion: "2026.3.14" },
+          configSchema: { type: "object" },
         },
-        pluginManifest: { id: "demo.plugin" },
-        source: {
-          kind: "github",
-          url: "https://github.com/openclaw/demo-plugin",
-          repo: "openclaw/demo-plugin",
-          ref: "refs/tags/v1.0.0",
-          commit: "abc123",
-          path: ".",
-          importedAt: Date.now(),
-        },
-      }),
-    ).toThrow("package.json openclaw.environment is required");
+      },
+      pluginManifest: { id: "demo.plugin" },
+      source: {
+        kind: "github",
+        url: "https://github.com/openclaw/demo-plugin",
+        repo: "openclaw/demo-plugin",
+        ref: "refs/tags/v1.0.0",
+        commit: "abc123",
+        path: ".",
+        importedAt: Date.now(),
+      },
+    });
+
+    expect(result.capabilities.hostTargets).toEqual([]);
+    expect(result.capabilities.capabilityTags).not.toContain("environment:declared");
   });
 
   it("requires source metadata for code plugins", () => {
@@ -181,13 +181,14 @@ describe("packageRegistry", () => {
     expect(result.compatibility?.builtWithOpenClawVersion).toBe("2026.3.13");
   });
 
-  it("requires host targets for bundle plugins", () => {
-    expect(() =>
-      extractBundlePluginArtifacts({
-        packageName: "demo-bundle",
-        packageJson: { name: "demo-bundle" },
-      }),
-    ).toThrow("host target");
+  it("allows bundle plugins without host targets", () => {
+    const result = extractBundlePluginArtifacts({
+      packageName: "demo-bundle",
+      packageJson: { name: "demo-bundle" },
+    });
+
+    expect(result.capabilities.hostTargets).toEqual([]);
+    expect(result.capabilities.capabilityTags).toContain("bundle-only");
   });
 
   it("validates package name consistency and summary extraction", () => {

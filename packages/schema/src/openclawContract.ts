@@ -15,8 +15,6 @@ export type OpenClawExternalCodePluginValidation = {
 export const OPENCLAW_EXTERNAL_CODE_PLUGIN_REQUIRED_FIELD_PATHS = [
   "openclaw.compat.pluginApi",
   "openclaw.build.openclawVersion",
-  "openclaw.hostTargets",
-  "openclaw.environment",
 ] as const;
 
 function isRecord(value: unknown): value is JsonObject {
@@ -25,14 +23,6 @@ function isRecord(value: unknown): value is JsonObject {
 
 function getTrimmedString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function getTrimmedStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }
 
 function readOpenClawBlock(packageJson: unknown) {
@@ -76,19 +66,13 @@ export function normalizeOpenClawExternalPluginCompatibility(
 }
 
 export function listMissingOpenClawExternalCodePluginFieldPaths(packageJson: unknown): string[] {
-  const { openclaw, compat, build } = readOpenClawBlock(packageJson);
+  const { compat, build } = readOpenClawBlock(packageJson);
   const missing: string[] = [];
   if (!getTrimmedString(compat?.pluginApi)) {
     missing.push("openclaw.compat.pluginApi");
   }
   if (!getTrimmedString(build?.openclawVersion)) {
     missing.push("openclaw.build.openclawVersion");
-  }
-  if (getTrimmedStringList(openclaw?.hostTargets).length === 0) {
-    missing.push("openclaw.hostTargets");
-  }
-  if (!isRecord(openclaw?.environment)) {
-    missing.push("openclaw.environment");
   }
   return missing;
 }
