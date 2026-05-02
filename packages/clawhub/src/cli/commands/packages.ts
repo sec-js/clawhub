@@ -16,6 +16,8 @@ import {
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
+  ApiV1PackageOfficialMigrationListResponseSchema,
+  ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackagePublishResponseSchema,
   ApiV1PackageReadinessResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
@@ -36,6 +38,8 @@ import {
   type PackageCompatibility,
   type PackageFamily,
   type PackageModerationQueueStatus,
+  type PackageOfficialMigrationListPhase,
+  type PackageOfficialMigrationPhase,
   type PackageReportListStatus,
   type PackageReportStatus,
   type PackageReleaseModerationState,
@@ -197,6 +201,29 @@ type PackageReadinessOptions = {
 };
 
 type PackageMigrationStatusOptions = PackageReadinessOptions;
+
+type PackageMigrationListOptions = {
+  phase?: PackageOfficialMigrationListPhase;
+  cursor?: string;
+  limit?: number;
+  json?: boolean;
+};
+
+type PackageMigrationUpsertOptions = {
+  package?: string;
+  owner?: string;
+  sourceRepo?: string;
+  sourcePath?: string;
+  sourceCommit?: string;
+  phase?: PackageOfficialMigrationPhase;
+  blockers?: string;
+  hostTargetsComplete?: boolean;
+  scanClean?: boolean;
+  moderationApproved?: boolean;
+  runtimeBundlesReady?: boolean;
+  notes?: string;
+  json?: boolean;
+};
 
 type PackageTrustedPublisherGetOptions = {
   json?: boolean;
@@ -1363,6 +1390,129 @@ export async function cmdPackageMigrationStatus(
   }
   if (result.blockers.length > 0) {
     console.log(`Blockers: ${result.blockers.join(", ")}`);
+  }
+}
+
+export async function cmdListPackageMigrations(
+  opts: GlobalOpts,
+  options: PackageMigrationListOptions = {},
+) {
+  const phase = options.phase?.trim() || "all";
+  if (
+    ![
+      "planned",
+      "published",
+      "clawpack-ready",
+      "legacy-zip-only",
+      "metadata-ready",
+      "blocked",
+      "ready-for-openclaw",
+      "all",
+    ].includes(phase)
+  ) {
+    fail(
+      "--phase must be planned, published, clawpack-ready, legacy-zip-only, metadata-ready, blocked, ready-for-openclaw, or all",
+    );
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.packages}/migrations`, registry);
+  url.searchParams.set("phase", phase);
+  if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
+  url.searchParams.set("limit", String(clampLimit(options.limit ?? 25, 100)));
+
+  const result = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      url: url.toString(),
+      token,
+    },
+    ApiV1PackageOfficialMigrationListResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  if (result.items.length === 0) {
+    console.log("No package migrations found.");
+  } else {
+    for (const item of result.items) {
+      const blockers = item.blockers.length > 0 ? ` blockers:${item.blockers.length}` : "";
+      console.log(`${item.bundledPluginId} ${item.phase} ${item.packageName}${blockers}`);
+      if (item.sourceRepo || item.sourcePath || item.sourceCommit) {
+        const source = [item.sourceRepo, item.sourcePath, item.sourceCommit]
+          .filter(Boolean)
+          .join(" ");
+        console.log(`  source: ${source}`);
+      }
+      if (item.notes) console.log(`  notes: ${item.notes}`);
+    }
+  }
+  if (!result.done && result.nextCursor) {
+    console.log(`Next cursor: ${result.nextCursor}`);
+  }
+}
+
+export async function cmdUpsertPackageMigration(
+  opts: GlobalOpts,
+  bundledPluginId: string,
+  options: PackageMigrationUpsertOptions = {},
+) {
+  const trimmed = bundledPluginId.trim();
+  const packageName = options.package?.trim();
+  if (!trimmed) fail("Bundled plugin id required");
+  if (!packageName) fail("--package required");
+  const blockers = parseCsv(options.blockers);
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Updating migration ${trimmed}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/migrations`,
+        token,
+        body: {
+          bundledPluginId: trimmed,
+          packageName,
+          ...(options.owner?.trim() ? { owner: options.owner.trim() } : {}),
+          ...(options.sourceRepo?.trim() ? { sourceRepo: options.sourceRepo.trim() } : {}),
+          ...(options.sourcePath?.trim() ? { sourcePath: options.sourcePath.trim() } : {}),
+          ...(options.sourceCommit?.trim() ? { sourceCommit: options.sourceCommit.trim() } : {}),
+          ...(options.phase ? { phase: options.phase } : {}),
+          ...(blockers.length > 0 ? { blockers } : {}),
+          ...(typeof options.hostTargetsComplete === "boolean"
+            ? { hostTargetsComplete: options.hostTargetsComplete }
+            : {}),
+          ...(typeof options.scanClean === "boolean" ? { scanClean: options.scanClean } : {}),
+          ...(typeof options.moderationApproved === "boolean"
+            ? { moderationApproved: options.moderationApproved }
+            : {}),
+          ...(typeof options.runtimeBundlesReady === "boolean"
+            ? { runtimeBundlesReady: options.runtimeBundlesReady }
+            : {}),
+          ...(options.notes?.trim() ? { notes: options.notes.trim() } : {}),
+        },
+      },
+      ApiV1PackageOfficialMigrationResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(
+      `OK. Migration ${result.migration.bundledPluginId} is ${result.migration.phase} for ${result.migration.packageName}.`,
+    );
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
   }
 }
 

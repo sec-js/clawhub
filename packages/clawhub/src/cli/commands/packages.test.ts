@@ -37,6 +37,7 @@ const {
   cmdBackfillPackageArtifacts,
   cmdListPackageReports,
   cmdListPackageAppeals,
+  cmdListPackageMigrations,
   cmdModeratePackageRelease,
   cmdPackageModerationStatus,
   cmdPackageModerationQueue,
@@ -47,6 +48,7 @@ const {
   cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
+  cmdUpsertPackageMigration,
   cmdVerifyPackage,
 } = await import("./packages");
 
@@ -903,6 +905,100 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("Version: 1.2.3");
     expect(mockLog).toHaveBeenCalledWith("Official: yes");
     expect(mockLog).toHaveBeenCalledWith("PASS clawpack: Latest version has a ClawPack artifact.");
+  });
+
+  it("lists package migration rows", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          migrationId: "officialPluginMigrations:1",
+          bundledPluginId: "core.search",
+          packageName: "@scope/demo",
+          packageId: "pkg_1",
+          owner: "platform",
+          sourceRepo: "openclaw/openclaw",
+          sourcePath: "plugins/search",
+          sourceCommit: "abc123",
+          phase: "blocked",
+          blockers: ["missing ClawPack"],
+          hostTargetsComplete: true,
+          scanClean: false,
+          moderationApproved: false,
+          runtimeBundlesReady: false,
+          notes: "needs publisher upload",
+          createdAt: 100,
+          updatedAt: 200,
+        },
+      ],
+      nextCursor: null,
+      done: true,
+    });
+
+    await cmdListPackageMigrations(makeOpts(), { phase: "blocked", limit: 10 });
+
+    const url = new URL(httpMocks.apiRequest.mock.calls[0]?.[1].url as string);
+    expect(url.pathname).toBe("/api/v1/packages/migrations");
+    expect(url.searchParams.get("phase")).toBe("blocked");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(mockLog).toHaveBeenCalledWith("core.search blocked @scope/demo blockers:1");
+    expect(mockLog).toHaveBeenCalledWith("  source: openclaw/openclaw plugins/search abc123");
+    expect(mockLog).toHaveBeenCalledWith("  notes: needs publisher upload");
+  });
+
+  it("upserts package migration rows", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      migration: {
+        migrationId: "officialPluginMigrations:1",
+        bundledPluginId: "core.search",
+        packageName: "@scope/demo",
+        packageId: "pkg_1",
+        owner: "platform",
+        sourceRepo: "openclaw/openclaw",
+        sourcePath: "plugins/search",
+        sourceCommit: null,
+        phase: "blocked",
+        blockers: ["missing ClawPack"],
+        hostTargetsComplete: true,
+        scanClean: false,
+        moderationApproved: false,
+        runtimeBundlesReady: false,
+        notes: null,
+        createdAt: 100,
+        updatedAt: 200,
+      },
+    });
+
+    await cmdUpsertPackageMigration(makeOpts(), "core.search", {
+      package: "@scope/demo",
+      owner: "platform",
+      sourceRepo: "openclaw/openclaw",
+      sourcePath: "plugins/search",
+      phase: "blocked",
+      blockers: "missing ClawPack",
+      hostTargetsComplete: true,
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/migrations",
+        token: "tkn",
+        body: {
+          bundledPluginId: "core.search",
+          packageName: "@scope/demo",
+          owner: "platform",
+          sourceRepo: "openclaw/openclaw",
+          sourcePath: "plugins/search",
+          phase: "blocked",
+          blockers: ["missing ClawPack"],
+          hostTargetsComplete: true,
+        },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Migration core.search is blocked for @scope/demo.");
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

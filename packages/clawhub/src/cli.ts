@@ -25,6 +25,7 @@ import {
   cmdDeletePackageTrustedPublisher,
   cmdListPackageReports,
   cmdListPackageAppeals,
+  cmdListPackageMigrations,
   cmdModeratePackageRelease,
   cmdPackageModerationStatus,
   cmdPackageModerationQueue,
@@ -35,6 +36,7 @@ import {
   cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
+  cmdUpsertPackageMigration,
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
@@ -612,6 +614,52 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageMigrationStatus(opts, name, options);
+  });
+
+packageCmd
+  .command("migrations")
+  .description("List official plugin migration rows")
+  .option(
+    "--phase <phase>",
+    "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all",
+    "all",
+  )
+  .option("--cursor <cursor>", "Resume cursor")
+  .option(
+    "--limit <n>",
+    "Number of migrations to show (max 100)",
+    (value) => Number.parseInt(value, 10),
+    25,
+  )
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListPackageMigrations(opts, options);
+  });
+
+packageCmd
+  .command("set-migration")
+  .description("Create or update an official plugin migration row")
+  .argument("<bundled-plugin-id>", "Bundled OpenClaw plugin id")
+  .requiredOption("--package <name>", "ClawHub package name")
+  .option("--owner <owner>", "Migration owner")
+  .option("--source-repo <repo>", "Source repository")
+  .option("--source-path <path>", "Source path inside repository")
+  .option("--source-commit <sha>", "Source commit SHA")
+  .option(
+    "--phase <phase>",
+    "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw",
+  )
+  .option("--blockers <items>", "Comma-separated migration blockers")
+  .option("--host-targets-complete", "Mark host target metadata complete")
+  .option("--scan-clean", "Mark scan state clean")
+  .option("--moderation-approved", "Mark moderation approved")
+  .option("--runtime-bundles-ready", "Mark runtime bundles ready")
+  .option("--notes <text>", "Operator notes")
+  .option("--json", "Output JSON")
+  .action(async (bundledPluginId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdUpsertPackageMigration(opts, bundledPluginId, options);
   });
 
 packageCmd
