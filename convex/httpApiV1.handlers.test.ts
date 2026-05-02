@@ -4075,6 +4075,95 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package appeals lists moderator appeal intake", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        items: [
+          {
+            appealId: "packageAppeals:1",
+            packageId: "packages:1",
+            releaseId: "packageReleases:1",
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+            version: "1.2.3",
+            message: "please review",
+            status: "open",
+            createdAt: 123,
+            submitter: { userId: "users:owner", handle: "owner", displayName: "Owner" },
+            resolvedAt: null,
+            resolvedBy: null,
+            resolutionNote: null,
+          },
+        ],
+        nextCursor: null,
+        done: true,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/appeals?status=open&limit=10", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ appealId: "packageAppeals:1", name: "@scope/demo" }],
+    });
+    expect(runQuery).toHaveBeenCalledWith(internal.packages.listPackageAppealsInternal, {
+      actorUserId: "users:moderator",
+      cursor: null,
+      limit: 10,
+      status: "open",
+    });
+  });
+
+  it("package appeal resolve posts moderator decisions", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        appealId: "packageAppeals:1",
+        packageId: "packages:1",
+        releaseId: "packageReleases:1",
+        status: "rejected",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/appeals/packageAppeals%3A1/resolve", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ status: "rejected", note: "scanner finding still applies" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "rejected" });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.packages.resolvePackageAppealForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        appealId: "packageAppeals:1",
+        status: "rejected",
+        note: "scanner finding still applies",
+      },
+    );
+  });
+
   it("package artifact backfill posts admin dry-run requests", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

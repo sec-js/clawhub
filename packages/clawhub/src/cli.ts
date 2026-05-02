@@ -24,12 +24,14 @@ import {
   cmdInspectPackage,
   cmdDeletePackageTrustedPublisher,
   cmdListPackageReports,
+  cmdListPackageAppeals,
   cmdModeratePackageRelease,
   cmdPackageModerationStatus,
   cmdPackageModerationQueue,
   cmdPackageReadiness,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdVerifyPackage,
@@ -491,6 +493,35 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdAppealPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("appeals")
+  .description("List package appeals for moderator review")
+  .option("--status <status>", "open|accepted|rejected|all", "open")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option(
+    "--limit <n>",
+    "Number of appeals to show (max 100)",
+    (value) => Number.parseInt(value, 10),
+    25,
+  )
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListPackageAppeals(opts, options);
+  });
+
+packageCmd
+  .command("resolve-appeal")
+  .description("Resolve or reopen a package appeal")
+  .argument("<appeal-id>", "Package appeal id")
+  .requiredOption("--status <status>", "open|accepted|rejected")
+  .option("--note <text>", "Resolution note; required unless reopening")
+  .option("--json", "Output JSON")
+  .action(async (appealId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdResolvePackageAppeal(opts, appealId, options);
   });
 
 packageCmd

@@ -36,12 +36,14 @@ const {
   cmdInspectPackage,
   cmdBackfillPackageArtifacts,
   cmdListPackageReports,
+  cmdListPackageAppeals,
   cmdModeratePackageRelease,
   cmdPackageModerationStatus,
   cmdPackageModerationQueue,
   cmdPackageReadiness,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdVerifyPackage,
@@ -546,6 +548,70 @@ describe("package commands", () => {
       expect.anything(),
     );
     expect(mockLog).toHaveBeenCalledWith("OK. Appeal submitted: packageAppeals:1");
+  });
+
+  it("lists package appeals", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          appealId: "packageAppeals:1",
+          packageId: "pkg_1",
+          releaseId: "rel_1",
+          name: "@scope/demo",
+          displayName: "Demo",
+          family: "code-plugin",
+          version: "1.2.3",
+          message: "please review",
+          status: "open",
+          createdAt: 1,
+          submitter: { userId: "users:owner", handle: "owner", displayName: "Owner" },
+          resolvedAt: null,
+          resolvedBy: null,
+          resolutionNote: null,
+        },
+      ],
+      nextCursor: null,
+      done: true,
+    });
+
+    await cmdListPackageAppeals(makeOpts(), { status: "open", limit: 10 });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages/appeals");
+    expect(url.searchParams.get("status")).toBe("open");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(mockLog).toHaveBeenCalledWith("packageAppeals:1 open @scope/demo@1.2.3");
+  });
+
+  it("resolves package appeals", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      appealId: "packageAppeals:1",
+      packageId: "pkg_1",
+      releaseId: "rel_1",
+      status: "rejected",
+    });
+
+    await cmdResolvePackageAppeal(makeOpts(), "packageAppeals:1", {
+      status: "rejected",
+      note: "scanner finding still applies",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/appeals/packageAppeals%3A1/resolve",
+        token: "tkn",
+        body: {
+          status: "rejected",
+          note: "scanner finding still applies",
+        },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Appeal packageAppeals:1 set to rejected.");
   });
 
   it("lists package reports", async () => {

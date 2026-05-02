@@ -1322,6 +1322,7 @@ const packageAppeals = defineTable({
   createdAt: v.number(),
 })
   .index("by_release_status_createdAt", ["releaseId", "status", "createdAt"])
+  .index("by_createdAt", ["createdAt"])
   .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user_createdAt", ["userId", "createdAt"]);
 

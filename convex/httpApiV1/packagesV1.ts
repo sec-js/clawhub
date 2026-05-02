@@ -1,6 +1,7 @@
 import {
   PackageArtifactBackfillRequestSchema,
   ApiV1PackageModerationStatusResponseSchema,
+  PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageReportRequestSchema,
   PackageReportTriageRequestSchema,
@@ -9,6 +10,7 @@ import {
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
   parseArk,
+  type PackageAppealListStatus,
   type PackageModerationQueueStatus,
   type PackageReportListStatus,
 } from "clawhub-schema";
@@ -80,6 +82,8 @@ const internalRefs = internal as unknown as {
     triagePackageReportForUserInternal: unknown;
     getPackageModerationStatusForUserInternal: unknown;
     submitPackageAppealForUserInternal: unknown;
+    listPackageAppealsInternal: unknown;
+    resolvePackageAppealForUserInternal: unknown;
     backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
   };
@@ -197,6 +201,20 @@ function parsePackageReportListStatus(value: string | null): PackageReportListSt
     normalized === "open" ||
     normalized === "triaged" ||
     normalized === "dismissed" ||
+    normalized === "all"
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function parsePackageAppealListStatus(value: string | null): PackageAppealListStatus | null {
+  if (!value) return "open";
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "open" ||
+    normalized === "accepted" ||
+    normalized === "rejected" ||
     normalized === "all"
   ) {
     return normalized;
@@ -1429,6 +1447,46 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   }
 
   if (
+    segments[0] === "appeals" &&
+    segments[1] &&
+    segments[2] === "resolve" &&
+    segments.length === 3
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageAppealResolveRequestSchema,
+        await request.json(),
+        "Package appeal resolve payload",
+      ) as {
+        status: "open" | "accepted" | "rejected";
+        note?: string;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.resolvePackageAppealForUserInternal,
+        {
+          actorUserId: auth.userId,
+          appealId: segments[1] as Id<"packageAppeals">,
+          status: body.status,
+          ...(body.note ? { note: body.note } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package appeal resolve failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (
     segments[1] === "versions" &&
     segments[2] &&
     segments[3] === "moderation" &&
@@ -1933,6 +1991,26 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
     const cursor = url.searchParams.get("cursor");
     const result = await runQueryRef(ctx, internalRefs.packages.listPackageReportsInternal, {
+      actorUserId: auth.userId,
+      cursor: cursor ?? null,
+      limit,
+      status,
+    });
+    return json(result, 200, rate.headers);
+  }
+
+  if (segments[0] === "appeals" && segments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    const url = new URL(request.url);
+    const status = parsePackageAppealListStatus(url.searchParams.get("status"));
+    if (!status) return text("Invalid package appeal status", 400, rate.headers);
+    const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
+    const cursor = url.searchParams.get("cursor");
+    const result = await runQueryRef(ctx, internalRefs.packages.listPackageAppealsInternal, {
       actorUserId: auth.userId,
       cursor: cursor ?? null,
       limit,

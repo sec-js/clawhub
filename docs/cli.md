@@ -367,6 +367,41 @@ Example:
 clawhub package appeal @openclaw/example-plugin --version 1.2.3 --message "linked source release explains the native binary"
 ```
 
+### `package appeals`
+
+- Moderator/admin command for listing package appeals.
+- Calls `GET /api/v1/packages/appeals`.
+- Flags:
+  - `--status open|accepted|rejected|all`: appeal state filter, default `open`.
+  - `--cursor <cursor>`: resume cursor from a previous page.
+  - `--limit <n>`: number of appeals to show, max 100.
+  - `--json`: machine-readable output.
+
+Examples:
+
+```bash
+clawhub package appeals
+clawhub package appeals --status all --limit 50
+```
+
+### `package resolve-appeal`
+
+- Moderator/admin command for accepting, rejecting, or reopening a package
+  appeal.
+- Calls `POST /api/v1/packages/appeals/{appealId}/resolve`.
+- Resolving an appeal does not automatically change release moderation state;
+  use `package moderate` to approve, quarantine, or revoke the artifact.
+- Flags:
+  - `--status open|accepted|rejected`: required appeal state.
+  - `--note <text>`: required unless `--status open`.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package resolve-appeal packageAppeals:abc --status rejected --note "static finding still applies"
+```
+
 ### `package reports`
 
 - Moderator/admin command for listing package reports.

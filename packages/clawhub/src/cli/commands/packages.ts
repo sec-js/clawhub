@@ -11,6 +11,8 @@ import {
   ApiV1PackageArtifactBackfillResponseSchema,
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageAppealResponseSchema,
+  ApiV1PackageAppealListResponseSchema,
+  ApiV1PackageAppealResolveResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
@@ -28,6 +30,8 @@ import {
   ApiV1PublishTokenMintResponseSchema,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
+  type PackageAppealListStatus,
+  type PackageAppealStatus,
   type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
@@ -140,6 +144,19 @@ type PackageReportOptions = {
 type PackageAppealOptions = {
   version?: string;
   message?: string;
+  json?: boolean;
+};
+
+type PackageAppealListOptions = {
+  status?: PackageAppealListStatus;
+  cursor?: string;
+  limit?: number;
+  json?: boolean;
+};
+
+type PackageAppealResolveOptions = {
+  status?: PackageAppealStatus;
+  note?: string;
   json?: boolean;
 };
 
@@ -933,6 +950,96 @@ export async function cmdAppealPackage(
       return;
     }
     console.log(`OK. Appeal submitted: ${result.appealId}`);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdListPackageAppeals(
+  opts: GlobalOpts,
+  options: PackageAppealListOptions = {},
+) {
+  const status = options.status?.trim() || "open";
+  if (!["open", "accepted", "rejected", "all"].includes(status)) {
+    fail("--status must be open, accepted, rejected, or all");
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.packages}/appeals`, registry);
+  url.searchParams.set("status", status);
+  if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
+  url.searchParams.set("limit", String(clampLimit(options.limit ?? 25, 100)));
+
+  const result = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      url: url.toString(),
+      token,
+    },
+    ApiV1PackageAppealListResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  if (result.items.length === 0) {
+    console.log("No package appeals found.");
+  } else {
+    for (const item of result.items) {
+      const submitter = item.submitter.handle ?? item.submitter.userId;
+      console.log(`${item.appealId} ${item.status} ${item.name}@${item.version}`);
+      console.log(`  submitter: ${submitter}`);
+      console.log(`  message: ${item.message}`);
+      if (item.resolutionNote) console.log(`  resolution: ${item.resolutionNote}`);
+    }
+  }
+  if (!result.done && result.nextCursor) {
+    console.log(`Next cursor: ${result.nextCursor}`);
+  }
+}
+
+export async function cmdResolvePackageAppeal(
+  opts: GlobalOpts,
+  appealId: string,
+  options: PackageAppealResolveOptions = {},
+) {
+  const trimmed = appealId.trim();
+  if (!trimmed) fail("Appeal id required");
+  const status = options.status?.trim();
+  if (!status || !["open", "accepted", "rejected"].includes(status)) {
+    fail("--status must be open, accepted, or rejected");
+  }
+  const note = options.note?.trim();
+  if (status !== "open" && !note) fail("--note required unless reopening");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Updating appeal ${trimmed}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/appeals/${encodeURIComponent(trimmed)}/resolve`,
+        token,
+        body: {
+          status,
+          ...(note ? { note } : {}),
+        },
+      },
+      ApiV1PackageAppealResolveResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`OK. Appeal ${trimmed} set to ${result.status}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

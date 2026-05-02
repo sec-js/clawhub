@@ -80,6 +80,9 @@ export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inf
 export const PackageAppealStatusSchema = type('"open"|"accepted"|"rejected"');
 export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
 
+export const PackageAppealListStatusSchema = PackageAppealStatusSchema.or('"all"');
+export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
+
 export const PackageArtifactSummarySchema = type({
   kind: PackageArtifactKindSchema,
   sha256: "string?",
@@ -357,6 +360,49 @@ export const ApiV1PackageAppealResponseSchema = type({
   status: PackageAppealStatusSchema,
 });
 export type ApiV1PackageAppealResponse = (typeof ApiV1PackageAppealResponseSchema)[inferred];
+
+export const PackageAppealResolveRequestSchema = type({
+  status: PackageAppealStatusSchema,
+  note: "string?",
+});
+export type PackageAppealResolveRequest = (typeof PackageAppealResolveRequestSchema)[inferred];
+
+export const ApiV1PackageAppealListResponseSchema = type({
+  items: type({
+    appealId: "string",
+    packageId: "string",
+    releaseId: "string",
+    name: "string",
+    displayName: "string",
+    family: PackageFamilySchema,
+    version: "string",
+    message: "string",
+    status: PackageAppealStatusSchema,
+    createdAt: "number",
+    submitter: type({
+      userId: "string",
+      handle: "string|null?",
+      displayName: "string|null?",
+    }),
+    resolvedAt: "number|null?",
+    resolvedBy: "string|null?",
+    resolutionNote: "string|null?",
+  }).array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1PackageAppealListResponse =
+  (typeof ApiV1PackageAppealListResponseSchema)[inferred];
+
+export const ApiV1PackageAppealResolveResponseSchema = type({
+  ok: "true",
+  appealId: "string",
+  packageId: "string",
+  releaseId: "string",
+  status: PackageAppealStatusSchema,
+});
+export type ApiV1PackageAppealResolveResponse =
+  (typeof ApiV1PackageAppealResolveResponseSchema)[inferred];
 
 export const ApiV1PackageReportListResponseSchema = type({
   items: type({

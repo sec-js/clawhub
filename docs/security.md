@@ -51,6 +51,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Package owners and publisher members can submit one open appeal per moderated
   package release. Appeals are audit-logged and do not automatically approve or
   unblock a release.
+- Moderators can accept, reject, or reopen appeals with a resolution note.
+  Appeal resolution is audit-logged and intentionally separate from changing
+  release moderation state.
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude

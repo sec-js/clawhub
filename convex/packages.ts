@@ -215,6 +215,27 @@ type PackageReportListItem = {
   triagedBy?: Id<"users"> | null;
   triageNote?: string | null;
 };
+type PackageAppealStatus = "open" | "accepted" | "rejected";
+type PackageAppealListItem = {
+  appealId: Id<"packageAppeals">;
+  packageId: Id<"packages">;
+  releaseId: Id<"packageReleases">;
+  name: string;
+  displayName: string;
+  family: PackageFamily;
+  version: string;
+  message: string;
+  status: PackageAppealStatus;
+  createdAt: number;
+  submitter: {
+    userId: Id<"users">;
+    handle?: string | null;
+    displayName?: string | null;
+  };
+  resolvedAt?: number | null;
+  resolvedBy?: Id<"users"> | null;
+  resolutionNote?: string | null;
+};
 type PackageModerationStatus = {
   package: {
     packageId: Id<"packages">;
@@ -2633,6 +2654,130 @@ export const submitPackageAppealForUserInternal = internalMutation({
       packageId: pkg._id,
       releaseId: release._id,
       status: "open" as const,
+    };
+  },
+});
+
+function toPackageAppealListItem(
+  appeal: Doc<"packageAppeals">,
+  pkg: Doc<"packages">,
+  submitter: Doc<"users"> | null,
+): PackageAppealListItem {
+  return {
+    appealId: appeal._id,
+    packageId: pkg._id,
+    releaseId: appeal.releaseId,
+    name: pkg.name,
+    displayName: pkg.displayName,
+    family: pkg.family,
+    version: appeal.version,
+    message: appeal.message,
+    status: appeal.status,
+    createdAt: appeal.createdAt,
+    submitter: {
+      userId: appeal.userId,
+      handle: submitter?.handle ?? null,
+      displayName: submitter?.displayName ?? submitter?.name ?? null,
+    },
+    resolvedAt: appeal.resolvedAt ?? null,
+    resolvedBy: appeal.resolvedBy ?? null,
+    resolutionNote: appeal.resolutionNote ?? null,
+  };
+}
+
+export const listPackageAppealsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    status: v.optional(
+      v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected"), v.literal("all")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
+    const status = args.status ?? "open";
+    const appealQuery =
+      status === "all"
+        ? ctx.db.query("packageAppeals").withIndex("by_createdAt", (q) => q)
+        : ctx.db
+            .query("packageAppeals")
+            .withIndex("by_status_createdAt", (q) => q.eq("status", status));
+    const page = await appealQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+
+    const items: PackageAppealListItem[] = [];
+    for (const appeal of page.page) {
+      const pkg = await ctx.db.get(appeal.packageId);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+      const submitter = await ctx.db.get(appeal.userId);
+      items.push(toPackageAppealListItem(appeal, pkg, submitter));
+    }
+
+    return {
+      items,
+      nextCursor: page.isDone ? null : page.continueCursor,
+      done: page.isDone,
+    };
+  },
+});
+
+export const resolvePackageAppealForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    appealId: v.id("packageAppeals"),
+    status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const appeal = await ctx.db.get(args.appealId);
+    if (!appeal) throw new ConvexError("Package appeal not found");
+    const pkg = await ctx.db.get(appeal.packageId);
+    if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package appeal not found");
+
+    const note = args.note?.trim();
+    const isOpen = args.status === "open";
+    if (!isOpen && !note) throw new ConvexError("Resolution note required.");
+    const now = Date.now();
+
+    await ctx.db.patch(appeal._id, {
+      status: args.status,
+      resolvedAt: isOpen ? undefined : now,
+      resolvedBy: isOpen ? undefined : actor._id,
+      resolutionNote: isOpen ? undefined : note?.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "package.appeal.resolve",
+      targetType: "packageAppeal",
+      targetId: appeal._id,
+      metadata: {
+        packageId: pkg._id,
+        releaseId: appeal.releaseId,
+        packageName: pkg.name,
+        version: appeal.version,
+        status: args.status,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      appealId: appeal._id,
+      packageId: pkg._id,
+      releaseId: appeal.releaseId,
+      status: args.status,
     };
   },
 });

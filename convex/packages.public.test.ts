@@ -16,6 +16,8 @@ import {
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
   submitPackageAppealForUserInternal,
+  listPackageAppealsInternal,
+  resolvePackageAppealForUserInternal,
   getVersionByName,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
@@ -303,6 +305,38 @@ const submitPackageAppealForUserInternalHandler = (
       ok: true;
       submitted: boolean;
       alreadyOpen: boolean;
+      appealId: string;
+      packageId: string;
+      releaseId: string;
+      status: string;
+    }
+  >
+)._handler;
+const listPackageAppealsInternalHandler = (
+  listPackageAppealsInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      cursor?: string | null;
+      limit?: number;
+      status?: "open" | "accepted" | "rejected" | "all";
+    },
+    {
+      items: Array<{ appealId: string; name: string; status: string; message: string }>;
+      nextCursor: string | null;
+      done: boolean;
+    }
+  >
+)._handler;
+const resolvePackageAppealForUserInternalHandler = (
+  resolvePackageAppealForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      appealId: string;
+      status: "open" | "accepted" | "rejected";
+      note?: string;
+    },
+    {
+      ok: true;
       appealId: string;
       packageId: string;
       releaseId: string;
@@ -3819,6 +3853,122 @@ describe("packages public queries", () => {
       "auditLogs",
       expect.objectContaining({
         action: "package.appeal.submit",
+        targetType: "packageAppeal",
+      }),
+    );
+  });
+
+  it("lists package appeals for moderators", async () => {
+    const result = await listPackageAppealsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "users:owner") return { _id: id, handle: "owner" };
+            if (id === "packages:demo") return makePackageDoc({ name: "@scope/demo" });
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "packageAppeals") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        _id: "packageAppeals:1",
+                        packageId: "packages:demo",
+                        releaseId: "packageReleases:demo-1",
+                        version: "1.2.3",
+                        userId: "users:owner",
+                        message: "please review",
+                        status: "open",
+                        createdAt: 123,
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:moderator", status: "open", limit: 10 },
+    );
+
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          appealId: "packageAppeals:1",
+          name: "@scope/demo",
+          version: "1.2.3",
+          message: "please review",
+          status: "open",
+          submitter: expect.objectContaining({ handle: "owner" }),
+        }),
+      ],
+      nextCursor: null,
+      done: true,
+    });
+  });
+
+  it("resolves package appeals for moderators", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn(async () => "auditLogs:1");
+
+    const result = await resolvePackageAppealForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packageAppeals:1") {
+              return {
+                _id: id,
+                packageId: "packages:demo",
+                releaseId: "packageReleases:demo-1",
+                version: "1.2.3",
+                userId: "users:owner",
+                message: "please review",
+                status: "open",
+                createdAt: 123,
+              };
+            }
+            if (id === "packages:demo") return makePackageDoc({ name: "@scope/demo" });
+            return null;
+          }),
+          patch,
+          insert,
+          query: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:moderator",
+        appealId: "packageAppeals:1",
+        status: "rejected",
+        note: "scanner finding still applies",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      appealId: "packageAppeals:1",
+      status: "rejected",
+    });
+    expect(patch).toHaveBeenCalledWith("packageAppeals:1", {
+      status: "rejected",
+      resolvedAt: expect.any(Number),
+      resolvedBy: "users:moderator",
+      resolutionNote: "scanner finding still applies",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.appeal.resolve",
         targetType: "packageAppeal",
       }),
     );

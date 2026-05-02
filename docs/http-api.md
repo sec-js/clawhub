@@ -556,6 +556,78 @@ Response:
 }
 ```
 
+### `GET /api/v1/packages/appeals`
+
+Moderator/admin endpoint for package appeal intake.
+
+Auth:
+
+- Requires an API token for a moderator or admin user.
+
+Query params:
+
+- `status` (optional): `open` (default), `accepted`, `rejected`, or `all`
+- `limit` (optional): integer (1-100)
+- `cursor` (optional): pagination cursor
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "appealId": "packageAppeals:...",
+      "packageId": "packages:...",
+      "releaseId": "packageReleases:...",
+      "name": "@openclaw/example-plugin",
+      "displayName": "Example Plugin",
+      "family": "code-plugin",
+      "version": "1.2.3",
+      "message": "The native binary is signed.",
+      "status": "open",
+      "createdAt": 1730000000000,
+      "submitter": {
+        "userId": "users:...",
+        "handle": "publisher",
+        "displayName": "Publisher"
+      },
+      "resolvedAt": null,
+      "resolvedBy": null,
+      "resolutionNote": null
+    }
+  ],
+  "nextCursor": null,
+  "done": true
+}
+```
+
+### `POST /api/v1/packages/appeals/{appealId}/resolve`
+
+Moderator/admin endpoint for accepting, rejecting, or reopening an appeal.
+
+Request:
+
+```json
+{ "status": "rejected", "note": "Static finding still applies." }
+```
+
+`note` is required for `accepted` and `rejected`; it may be omitted when
+setting `status` back to `open`. Resolving an appeal does not automatically
+change release moderation state; use release moderation to approve, quarantine,
+or revoke the artifact.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "appealId": "packageAppeals:...",
+  "packageId": "packages:...",
+  "releaseId": "packageReleases:...",
+  "status": "rejected"
+}
+```
+
 ### `GET /api/v1/packages/reports`
 
 Moderator/admin endpoint for package report intake.

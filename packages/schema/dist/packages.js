@@ -51,6 +51,7 @@ export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined
 export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
 export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
 export const PackageAppealStatusSchema = type('"open"|"accepted"|"rejected"');
+export const PackageAppealListStatusSchema = PackageAppealStatusSchema.or('"all"');
 export const PackageArtifactSummarySchema = type({
     kind: PackageArtifactKindSchema,
     sha256: "string?",
@@ -276,6 +277,41 @@ export const ApiV1PackageAppealResponseSchema = type({
     ok: "true",
     submitted: "boolean",
     alreadyOpen: "boolean",
+    appealId: "string",
+    packageId: "string",
+    releaseId: "string",
+    status: PackageAppealStatusSchema,
+});
+export const PackageAppealResolveRequestSchema = type({
+    status: PackageAppealStatusSchema,
+    note: "string?",
+});
+export const ApiV1PackageAppealListResponseSchema = type({
+    items: type({
+        appealId: "string",
+        packageId: "string",
+        releaseId: "string",
+        name: "string",
+        displayName: "string",
+        family: PackageFamilySchema,
+        version: "string",
+        message: "string",
+        status: PackageAppealStatusSchema,
+        createdAt: "number",
+        submitter: type({
+            userId: "string",
+            handle: "string|null?",
+            displayName: "string|null?",
+        }),
+        resolvedAt: "number|null?",
+        resolvedBy: "string|null?",
+        resolutionNote: "string|null?",
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1PackageAppealResolveResponseSchema = type({
+    ok: "true",
     appealId: "string",
     packageId: "string",
     releaseId: "string",
