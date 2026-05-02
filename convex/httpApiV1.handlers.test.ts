@@ -3633,8 +3633,7 @@ describe("httpApiV1 handlers", () => {
       artifact: {
         kind: "npm-pack",
         tarballUrl: "https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz",
-        legacyDownloadUrl:
-          "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
+        legacyDownloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
       },
     });
   });

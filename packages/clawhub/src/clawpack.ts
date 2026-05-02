@@ -29,7 +29,7 @@ function readTarString(block: Uint8Array, offset: number, length: number) {
 }
 
 function readTarSize(block: Uint8Array) {
-  const raw = readTarString(block, 124, 12).replace(/\0/g, "").trim();
+  const raw = readTarString(block, 124, 12).split("\0").join("").trim();
   if (!raw) return 0;
   const size = Number.parseInt(raw, 8);
   if (!Number.isFinite(size) || size < 0) throw new Error("Invalid tar entry size");
