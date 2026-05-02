@@ -142,7 +142,7 @@ export function PackageSourceChooser(props: {
               {props.normalizedPathSet.has(".codex-plugin/plugin.json") ||
               props.normalizedPathSet.has(".claude-plugin/plugin.json") ||
               props.normalizedPathSet.has(".cursor-plugin/plugin.json") ? (
-                <Badge>Bundle marker</Badge>
+                <Badge>Agent metadata</Badge>
               ) : null}
               {props.normalizedPathSet.has("readme.md") ||
               props.normalizedPathSet.has("readme.mdx") ? (
