@@ -21,6 +21,7 @@ import {
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdDeletePackageTrustedPublisher,
+  cmdModeratePackageRelease,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackage,
@@ -432,6 +433,19 @@ packageCmd
       ...options,
       packageName: options.package,
     });
+  });
+
+packageCmd
+  .command("moderate")
+  .description("Set package release moderation state")
+  .argument("<name>", "Package name")
+  .requiredOption("--version <version>", "Package version")
+  .requiredOption("--state <state>", "approved|quarantined|revoked")
+  .requiredOption("--reason <text>", "Moderation note/reason")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdModeratePackageRelease(opts, name, options);
   });
 
 packageCmd

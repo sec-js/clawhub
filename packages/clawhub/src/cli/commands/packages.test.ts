@@ -33,6 +33,7 @@ const {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
+  cmdModeratePackageRelease,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackage,
@@ -428,6 +429,39 @@ describe("package commands", () => {
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
+  });
+
+  it("sets package release moderation state", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      packageId: "pkg_1",
+      releaseId: "rel_1",
+      state: "quarantined",
+      scanStatus: "malicious",
+    });
+
+    await cmdModeratePackageRelease(makeOpts(), "@scope/demo", {
+      version: "1.2.3",
+      state: "quarantined",
+      reason: "suspicious native payload",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/%40scope%2Fdemo/versions/1.2.3/moderation",
+        token: "tkn",
+        body: {
+          state: "quarantined",
+          reason: "suspicious native payload",
+        },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith(
+      "OK. @scope/demo@1.2.3 moderation state set to quarantined.",
+    );
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

@@ -315,6 +315,13 @@ const packageScanStatusValidator = v.optional(
   ),
 );
 
+const packageReleaseModerationOverrideValidator = v.object({
+  state: v.union(v.literal("approved"), v.literal("quarantined"), v.literal("revoked")),
+  reason: v.string(),
+  reviewerUserId: v.id("users"),
+  updatedAt: v.number(),
+});
+
 const packageFilesValidator = v.array(
   v.object({
     path: v.string(),
@@ -890,6 +897,7 @@ const packageReleases = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
   createdBy: v.id("users"),
   publishActor: packagePublishActorValidator,

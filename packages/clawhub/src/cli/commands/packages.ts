@@ -11,6 +11,7 @@ import {
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackagePublishResponseSchema,
+  ApiV1PackageReleaseModerationResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
   ApiV1PackageTrustedPublisherResponseSchema,
@@ -22,6 +23,7 @@ import {
   type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
+  type PackageReleaseModerationState,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
   validateOpenClawExternalCodePluginPackageJson,
@@ -95,6 +97,13 @@ type PackageVerifyOptions = {
   sha256?: string;
   npmIntegrity?: string;
   npmShasum?: string;
+  json?: boolean;
+};
+
+type PackageModerateOptions = {
+  version?: string;
+  state?: PackageReleaseModerationState;
+  reason?: string;
   json?: boolean;
 };
 
@@ -705,6 +714,48 @@ export async function cmdVerifyPackage(
     } else {
       console.log("Computed artifact digests. Pass --package or expected digests to verify.");
     }
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdModeratePackageRelease(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageModerateOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const version = options.version?.trim();
+  const state = options.state?.trim() as PackageReleaseModerationState | undefined;
+  const reason = options.reason?.trim();
+  if (!version) fail("--version required");
+  if (!state || !["approved", "quarantined", "revoked"].includes(state)) {
+    fail("--state must be approved, quarantined, or revoked");
+  }
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Moderating ${trimmed}@${version}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(version)}/moderation`,
+        token,
+        body: { state, reason },
+      },
+      ApiV1PackageReleaseModerationResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`OK. ${trimmed}@${version} moderation state set to ${result.state}.`);
+    console.log(`Scan status: ${result.scanStatus}`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

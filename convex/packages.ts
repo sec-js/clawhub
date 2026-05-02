@@ -1870,6 +1870,82 @@ export const softDeletePackageInternal = internalMutation({
   },
 });
 
+export const moderatePackageReleaseForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.string(),
+    state: v.union(v.literal("approved"), v.literal("quarantined"), v.literal("revoked")),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const normalizedName = normalizePackageName(args.name);
+    const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Package not found");
+    }
+
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release || release.softDeletedAt) throw new ConvexError("Version not found");
+
+    const now = Date.now();
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Moderation reason required");
+
+    const scanStatus = args.state === "approved" ? ("clean" as const) : ("malicious" as const);
+    const verification = release.verification
+      ? {
+          ...release.verification,
+          scanStatus,
+        }
+      : release.verification;
+    const patch: Partial<Doc<"packageReleases">> = {
+      manualModeration: {
+        state: args.state,
+        reason,
+        reviewerUserId: actor._id,
+        updatedAt: now,
+      },
+      verification,
+    };
+
+    await ctx.db.patch(release._id, patch);
+    const updatedRelease = { ...release, ...patch } as Doc<"packageReleases">;
+    await syncLatestPackageVerification(ctx, updatedRelease);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "package.release.moderation",
+      targetType: "packageRelease",
+      targetId: release._id,
+      metadata: {
+        packageId: pkg._id,
+        packageName: pkg.name,
+        version: release.version,
+        state: args.state,
+        reason,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      packageId: pkg._id,
+      releaseId: release._id,
+      state: args.state,
+      scanStatus,
+    };
+  },
+});
+
 export const getReleaseByIdInternal = internalQuery({
   args: { releaseId: v.id("packageReleases") },
   handler: async (ctx, args) => {

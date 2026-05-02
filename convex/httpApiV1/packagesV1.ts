@@ -1,4 +1,5 @@
 import {
+  PackageReleaseModerationRequestSchema,
   PackagePublishRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
@@ -66,6 +67,7 @@ const internalRefs = internal as unknown as {
     recordPackageDownloadInternal: unknown;
     requestRescanForApiTokenInternal: unknown;
     softDeletePackageInternal: unknown;
+    moderatePackageReleaseForUserInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -1250,6 +1252,47 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (
+    segments[1] === "versions" &&
+    segments[2] &&
+    segments[3] === "moderation" &&
+    segments.length === 4
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageReleaseModerationRequestSchema,
+        await request.json(),
+        "Package release moderation payload",
+      ) as {
+        state: "approved" | "quarantined" | "revoked";
+        reason: string;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.moderatePackageReleaseForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: segments[0]!,
+          version: segments[2],
+          state: body.state,
+          reason: body.reason,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package release moderation failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[1] === "rescan" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;

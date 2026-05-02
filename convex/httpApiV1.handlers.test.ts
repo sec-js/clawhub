@@ -3638,6 +3638,52 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package release moderation posts state changes", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:demo-plugin",
+        releaseId: "packageReleases:1",
+        state: "quarantined",
+        scanStatus: "malicious",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/moderation", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          state: "quarantined",
+          reason: "manual review",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      state: "quarantined",
+      scanStatus: "malicious",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.packages.moderatePackageReleaseForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        name: "demo-plugin",
+        version: "1.0.0",
+        state: "quarantined",
+        reason: "manual review",
+      },
+    );
+  });
+
   it("npm mirror packument lists only ClawPack-backed releases", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("paginationOpts" in args)) {

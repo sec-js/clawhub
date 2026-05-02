@@ -47,6 +47,7 @@ export const PackageStatsSchema = type({
     versions: "number",
 });
 export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
+export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
 export const PackageArtifactSummarySchema = type({
     kind: PackageArtifactKindSchema,
     sha256: "string?",
@@ -221,6 +222,39 @@ export const ApiV1PackageVersionResponseSchema = type({
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
         staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
+});
+export const ApiV1PackageArtifactResponseSchema = type({
+    package: type({
+        name: "string",
+        displayName: "string",
+        family: PackageFamilySchema,
+    }),
+    version: "string",
+    artifact: type({
+        kind: PackageArtifactKindSchema,
+        sha256: "string?",
+        size: "number?",
+        format: "string?",
+        npmIntegrity: "string?",
+        npmShasum: "string?",
+        npmTarballName: "string?",
+        npmUnpackedSize: "number?",
+        npmFileCount: "number?",
+        downloadUrl: "string",
+        tarballUrl: "string?",
+        legacyDownloadUrl: "string?",
+    }),
+});
+export const PackageReleaseModerationRequestSchema = type({
+    state: PackageReleaseModerationStateSchema,
+    reason: "string",
+});
+export const ApiV1PackageReleaseModerationResponseSchema = type({
+    ok: "true",
+    packageId: "string",
+    releaseId: "string",
+    state: PackageReleaseModerationStateSchema,
+    scanStatus: '"clean"|"malicious"',
 });
 export const ApiV1PackagePublishResponseSchema = type({
     ok: "true",

@@ -304,6 +304,25 @@ clawhub package verify ./example-plugin-1.2.3.tgz --package @openclaw/example-pl
 clawhub package verify ./example-plugin-1.2.3.tgz --sha256 <hex>
 ```
 
+### `package moderate <name>`
+
+- Moderator/admin command for package release review.
+- Calls
+  `POST /api/v1/packages/{name}/versions/{version}/moderation`.
+- `approved` allows a release after review.
+- `quarantined` and `revoked` block artifact downloads.
+- Flags:
+  - `--version <version>`: required release version.
+  - `--state approved|quarantined|revoked`: required moderation state.
+  - `--reason <text>`: required audit note.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package moderate @openclaw/example-plugin --version 1.2.3 --state quarantined --reason "suspicious native payload"
+```
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.

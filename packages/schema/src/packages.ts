@@ -68,6 +68,9 @@ export type PackageStats = (typeof PackageStatsSchema)[inferred];
 export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
 export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
 
+export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
+export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
+
 export const PackageArtifactSummarySchema = type({
   kind: PackageArtifactKindSchema,
   sha256: "string?",
@@ -275,6 +278,47 @@ export const ApiV1PackageVersionResponseSchema = type({
   }).or("null"),
 });
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+
+export const ApiV1PackageArtifactResponseSchema = type({
+  package: type({
+    name: "string",
+    displayName: "string",
+    family: PackageFamilySchema,
+  }),
+  version: "string",
+  artifact: type({
+    kind: PackageArtifactKindSchema,
+    sha256: "string?",
+    size: "number?",
+    format: "string?",
+    npmIntegrity: "string?",
+    npmShasum: "string?",
+    npmTarballName: "string?",
+    npmUnpackedSize: "number?",
+    npmFileCount: "number?",
+    downloadUrl: "string",
+    tarballUrl: "string?",
+    legacyDownloadUrl: "string?",
+  }),
+});
+export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
+
+export const PackageReleaseModerationRequestSchema = type({
+  state: PackageReleaseModerationStateSchema,
+  reason: "string",
+});
+export type PackageReleaseModerationRequest =
+  (typeof PackageReleaseModerationRequestSchema)[inferred];
+
+export const ApiV1PackageReleaseModerationResponseSchema = type({
+  ok: "true",
+  packageId: "string",
+  releaseId: "string",
+  state: PackageReleaseModerationStateSchema,
+  scanStatus: '"clean"|"malicious"',
+});
+export type ApiV1PackageReleaseModerationResponse =
+  (typeof ApiV1PackageReleaseModerationResponseSchema)[inferred];
 
 export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",

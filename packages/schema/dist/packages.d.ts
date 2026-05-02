@@ -55,6 +55,8 @@ export declare const PackageStatsSchema: import("arktype/internal/variants/objec
 export type PackageStats = (typeof PackageStatsSchema)[inferred];
 export declare const PackageArtifactKindSchema: import("arktype/internal/variants/string.ts").StringType<"legacy-zip" | "npm-pack", {}>;
 export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
+export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
+export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
 export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "legacy-zip" | "npm-pack";
     sha256?: string | undefined;
@@ -443,6 +445,42 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     } | null;
 }, {}>;
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+export declare const ApiV1PackageArtifactResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+    };
+    version: string;
+    artifact: {
+        kind: "legacy-zip" | "npm-pack";
+        downloadUrl: string;
+        sha256?: string | undefined;
+        size?: number | undefined;
+        format?: string | undefined;
+        npmIntegrity?: string | undefined;
+        npmShasum?: string | undefined;
+        npmTarballName?: string | undefined;
+        npmUnpackedSize?: number | undefined;
+        npmFileCount?: number | undefined;
+        tarballUrl?: string | undefined;
+        legacyDownloadUrl?: string | undefined;
+    };
+}, {}>;
+export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
+export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    state: "approved" | "quarantined" | "revoked";
+    reason: string;
+}, {}>;
+export type PackageReleaseModerationRequest = (typeof PackageReleaseModerationRequestSchema)[inferred];
+export declare const ApiV1PackageReleaseModerationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    releaseId: string;
+    state: "approved" | "quarantined" | "revoked";
+    scanStatus: "clean" | "malicious";
+}, {}>;
+export type ApiV1PackageReleaseModerationResponse = (typeof ApiV1PackageReleaseModerationResponseSchema)[inferred];
 export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     packageId: string;

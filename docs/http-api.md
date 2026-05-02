@@ -382,6 +382,25 @@ Notes:
 - Legacy ZIP versions redirect to `/api/v1/packages/{name}/download?version=`.
 - Uses the download rate bucket.
 
+### `POST /api/v1/packages/{name}/versions/{version}/moderation`
+
+Moderator/admin endpoint for package release review.
+
+Request:
+
+```json
+{ "state": "quarantined", "reason": "Suspicious native payload." }
+```
+
+Supported states:
+
+- `approved`: manually reviewed and allowed.
+- `quarantined`: blocked pending follow-up.
+- `revoked`: blocked after a release was previously trusted.
+
+Quarantined and revoked releases return `403` from artifact download routes.
+Every change writes an audit log entry.
+
 ### `GET /api/v1/packages/{name}/file`
 
 Returns raw text content for a package file.
