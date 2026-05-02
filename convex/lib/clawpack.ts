@@ -108,7 +108,9 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
 }
 
 async function digestBytes(algorithm: "SHA-1" | "SHA-256" | "SHA-512", bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest(algorithm, bytes);
+  const input = new Uint8Array(bytes.byteLength);
+  input.set(bytes);
+  const digest = await crypto.subtle.digest(algorithm, input.buffer);
   return new Uint8Array(digest);
 }
 
@@ -125,6 +127,10 @@ function toBase64(bytes: Uint8Array) {
 export function npmTarballName(packageName: string, version: string) {
   const normalizedName = packageName.replace(/^@/, "").replace("/", "-");
   return `${normalizedName}-${version}.tgz`;
+}
+
+export async function sha256Hex(bytes: Uint8Array) {
+  return toHex(await digestBytes("SHA-256", bytes));
 }
 
 export async function parseClawPack(bytes: Uint8Array): Promise<ParsedClawPack> {

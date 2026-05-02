@@ -1,6 +1,7 @@
 import {
   PackagePublishRequestSchema,
   parseArk,
+  type PackageArtifactSummary,
   type PackageChannel,
   type PackageFamily,
   type PackagePublishRequest,
@@ -286,6 +287,7 @@ type PublicPackageDoc = {
   compatibility?: Doc<"packages">["compatibility"];
   capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
+  artifact?: PackageArtifactSummary;
   scanStatus?: Doc<"packages">["scanStatus"];
   stats: Doc<"packages">["stats"];
   createdAt: number;
@@ -369,7 +371,7 @@ async function canViewerReadPackage(
 
 function toPublicPackage(
   pkg: Doc<"packages"> | null | undefined,
-  latestRelease?: Pick<Doc<"packageReleases">, "version" | "softDeletedAt"> | null,
+  latestRelease?: Doc<"packageReleases"> | null,
 ): PublicPackageDoc | null {
   if (!pkg || pkg.softDeletedAt) return null;
   const latestVersion =
@@ -393,10 +395,51 @@ function toPublicPackage(
     compatibility: pkg.compatibility,
     capabilities: pkg.capabilities,
     verification: pkg.verification,
+    artifact:
+      latestRelease === undefined
+        ? pkg.latestVersionSummary?.artifact
+        : latestRelease && !latestRelease.softDeletedAt
+          ? packageArtifactSummary(latestRelease)
+          : undefined,
     scanStatus: pkg.scanStatus,
     stats: pkg.stats,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
+  };
+}
+
+function packageArtifactSummary(
+  release: Pick<
+    Doc<"packageReleases">,
+    | "artifactKind"
+    | "integritySha256"
+    | "clawpackSha256"
+    | "clawpackSize"
+    | "clawpackFormat"
+    | "npmIntegrity"
+    | "npmShasum"
+    | "npmTarballName"
+    | "npmUnpackedSize"
+    | "npmFileCount"
+  >,
+): PackageArtifactSummary {
+  if (release.artifactKind === "npm-pack") {
+    return {
+      kind: "npm-pack",
+      sha256: release.clawpackSha256,
+      size: release.clawpackSize,
+      format: release.clawpackFormat ?? "tgz",
+      npmIntegrity: release.npmIntegrity,
+      npmShasum: release.npmShasum,
+      npmTarballName: release.npmTarballName,
+      npmUnpackedSize: release.npmUnpackedSize,
+      npmFileCount: release.npmFileCount,
+    };
+  }
+  return {
+    kind: "legacy-zip",
+    sha256: release.integritySha256,
+    format: "zip",
   };
 }
 
@@ -2132,6 +2175,13 @@ async function publishPackageImpl(
   const storedPluginManifest = toConvexSafeJsonValue(pluginManifest);
   const storedBundleManifest = toConvexSafeJsonValue(bundleManifest);
   if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
+  if (payload.artifact?.kind === "npm-pack") {
+    if (!packageJson) throw new ConvexError("ClawPack must contain package.json");
+    const declaredVersion = typeof packageJson.version === "string" ? packageJson.version.trim() : "";
+    if (declaredVersion !== version) {
+      throw new ConvexError(`ClawPack package.json version must match ${version}`);
+    }
+  }
 
   const bundleArtifacts =
     family === "bundle-plugin"
@@ -2216,6 +2266,16 @@ async function publishPackageImpl(
     staticScan,
     files,
     integritySha256,
+    artifactKind: payload.artifact?.kind ?? "legacy-zip",
+    clawpackStorageId: payload.artifact?.storageId as Id<"_storage"> | undefined,
+    clawpackSha256: payload.artifact?.sha256,
+    clawpackSize: payload.artifact?.size,
+    clawpackFormat: payload.artifact?.format,
+    npmIntegrity: payload.artifact?.npmIntegrity,
+    npmShasum: payload.artifact?.npmShasum,
+    npmTarballName: payload.artifact?.npmTarballName,
+    npmUnpackedSize: payload.artifact?.npmUnpackedSize,
+    npmFileCount: payload.artifact?.npmFileCount,
     allowExistingRelease:
       auth.kind === "github-actions" ||
       (auth.kind === "user" && manualOverrideReason?.startsWith("GitHub Actions ")),
@@ -2643,6 +2703,16 @@ export const insertReleaseInternal = internalMutation({
       }),
     ),
     integritySha256: v.string(),
+    artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
+    clawpackStorageId: v.optional(v.id("_storage")),
+    clawpackSha256: v.optional(v.string()),
+    clawpackSize: v.optional(v.number()),
+    clawpackFormat: v.optional(v.literal("tgz")),
+    npmIntegrity: v.optional(v.string()),
+    npmShasum: v.optional(v.string()),
+    npmTarballName: v.optional(v.string()),
+    npmUnpackedSize: v.optional(v.number()),
+    npmFileCount: v.optional(v.number()),
     extractedPackageJson: v.optional(v.any()),
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
@@ -2785,6 +2855,16 @@ export const insertReleaseInternal = internalMutation({
       distTags: effectiveTags,
       files: args.files,
       integritySha256: args.integritySha256,
+      artifactKind: args.artifactKind,
+      clawpackStorageId: args.clawpackStorageId,
+      clawpackSha256: args.clawpackSha256,
+      clawpackSize: args.clawpackSize,
+      clawpackFormat: args.clawpackFormat,
+      npmIntegrity: args.npmIntegrity,
+      npmShasum: args.npmShasum,
+      npmTarballName: args.npmTarballName,
+      npmUnpackedSize: args.npmUnpackedSize,
+      npmFileCount: args.npmFileCount,
       extractedPackageJson: args.extractedPackageJson,
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
@@ -2830,6 +2910,7 @@ export const insertReleaseInternal = internalMutation({
             compatibility: args.compatibility,
             capabilities: args.capabilities,
             verification: args.verification,
+            artifact: packageArtifactSummary(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,

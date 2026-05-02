@@ -15,6 +15,7 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { parseClawPack, sha256Hex } from "../lib/clawpack";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
@@ -162,6 +163,16 @@ type ReleaseLike = {
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
   staticScan?: Doc<"packageReleases">["staticScan"];
   integritySha256?: string;
+  artifactKind?: Doc<"packageReleases">["artifactKind"];
+  clawpackStorageId?: Doc<"packageReleases">["clawpackStorageId"];
+  clawpackSha256?: string;
+  clawpackSize?: number;
+  clawpackFormat?: "tgz";
+  npmIntegrity?: string;
+  npmShasum?: string;
+  npmTarballName?: string;
+  npmUnpackedSize?: number;
+  npmFileCount?: number;
   softDeletedAt?: number;
 };
 
@@ -199,6 +210,27 @@ function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike 
 
 function getReleaseSecurityBlock(release: ReleaseLike) {
   return getPackageDownloadSecurityBlock(release);
+}
+
+function toReleaseArtifact(release: ReleaseLike) {
+  if (release.artifactKind === "npm-pack") {
+    return {
+      kind: "npm-pack" as const,
+      sha256: release.clawpackSha256,
+      size: release.clawpackSize,
+      format: release.clawpackFormat ?? "tgz",
+      npmIntegrity: release.npmIntegrity,
+      npmShasum: release.npmShasum,
+      npmTarballName: release.npmTarballName,
+      npmUnpackedSize: release.npmUnpackedSize,
+      npmFileCount: release.npmFileCount,
+    };
+  }
+  return {
+    kind: "legacy-zip" as const,
+    sha256: release.integritySha256 ?? release.sha256hash,
+    format: "zip",
+  };
 }
 
 async function resolvePackageTags(
@@ -581,6 +613,18 @@ function parsePackagePublishBody(body: unknown) {
       sha256: string;
       contentType?: string;
     }>;
+    artifact?: {
+      kind: "npm-pack";
+      storageId: string;
+      sha256: string;
+      size: number;
+      format: "tgz";
+      npmIntegrity: string;
+      npmShasum: string;
+      npmTarballName: string;
+      npmUnpackedSize: number;
+      npmFileCount: number;
+    };
   };
   if (parsed.files.length === 0) throw new Error("files required");
   return {
@@ -599,7 +643,32 @@ function parsePackagePublishBody(body: unknown) {
       ...file,
       storageId: file.storageId as Id<"_storage">,
     })),
+    artifact: parsed.artifact
+      ? {
+          ...parsed.artifact,
+          storageId: parsed.artifact.storageId as Id<"_storage">,
+        }
+      : undefined,
   };
+}
+
+function inferStoredPackageContentType(path: string) {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".md") || lower.endsWith(".mdx") || lower.endsWith(".txt")) {
+    return "text/plain; charset=utf-8";
+  }
+  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
+    return "text/javascript; charset=utf-8";
+  }
+  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "text/plain; charset=utf-8";
+  return "application/octet-stream";
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
@@ -614,6 +683,65 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
     sha256: string;
     contentType?: string;
   }> = [];
+  let artifact:
+    | {
+        kind: "npm-pack";
+        storageId: Id<"_storage">;
+        sha256: string;
+        size: number;
+        format: "tgz";
+        npmIntegrity: string;
+        npmShasum: string;
+        npmTarballName: string;
+        npmUnpackedSize: number;
+        npmFileCount: number;
+      }
+    | undefined;
+
+  const clawpackEntry = form.get("clawpack") ?? form.get("artifact");
+  if (clawpackEntry && typeof clawpackEntry !== "string") {
+    if (form.getAll("files").some((entry) => typeof entry !== "string")) {
+      throw new Error("Upload either a ClawPack tarball or individual files, not both");
+    }
+    if (clawpackEntry.size > MAX_PUBLISH_FILE_BYTES) {
+      throw new Error(getPublishFileSizeError(clawpackEntry.name));
+    }
+    const artifactBytes = new Uint8Array(await clawpackEntry.arrayBuffer());
+    const parsed = await parseClawPack(artifactBytes);
+    const artifactBlob = new Blob([artifactBytes], { type: "application/octet-stream" });
+    const artifactStorageId = await ctx.storage.store(artifactBlob);
+    artifact = {
+      kind: "npm-pack",
+      storageId: artifactStorageId,
+      sha256: parsed.artifactSha256,
+      size: artifactBytes.byteLength,
+      format: "tgz",
+      npmIntegrity: parsed.npmIntegrity,
+      npmShasum: parsed.npmShasum,
+      npmTarballName: parsed.npmTarballName,
+      npmUnpackedSize: parsed.unpackedSize,
+      npmFileCount: parsed.fileCount,
+    };
+    for (const entry of parsed.entries) {
+      if (isMacJunkPath(entry.path)) continue;
+      if (entry.bytes.byteLength > MAX_PUBLISH_FILE_BYTES) {
+        throw new Error(getPublishFileSizeError(entry.path));
+      }
+      const contentType = inferStoredPackageContentType(entry.path);
+      const storageId = await ctx.storage.store(
+        new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
+      );
+      files.push({
+        path: entry.path,
+        size: entry.bytes.byteLength,
+        storageId,
+        sha256: await sha256Hex(entry.bytes),
+        contentType,
+      });
+    }
+    return parsePackagePublishBody({ ...payload, files, artifact });
+  }
+
   for (const entry of form.getAll("files")) {
     if (typeof entry === "string") continue;
     if (isMacJunkPath(entry.name)) continue;
@@ -1566,6 +1694,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             compatibility: null,
             capabilities: null,
             verification: null,
+            artifact: null,
           },
         },
         200,
@@ -1603,6 +1732,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           compatibility: result.version.compatibility ?? null,
           capabilities: result.version.capabilities ?? null,
           verification: result.version.verification ?? null,
+          artifact: toReleaseArtifact(result.version),
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
