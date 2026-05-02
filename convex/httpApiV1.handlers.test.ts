@@ -3638,6 +3638,68 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package readiness reports official OpenClaw blockers", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            latestVersion: "1.0.0",
+            channel: "community",
+            isOfficial: false,
+            compatibility: {
+              pluginApiRange: "^1.0.0",
+              builtWithOpenClawVersion: "2026.3.14",
+            },
+            capabilities: {
+              executesCode: true,
+              hostTargets: ["darwin-arm64"],
+            },
+            verification: {
+              tier: "source-linked",
+              scope: "artifact-only",
+              sourceRepo: "openclaw/demo-plugin",
+              sourceCommit: "abc123",
+              scanStatus: "clean",
+            },
+            artifact: {
+              kind: "legacy-zip",
+              sha256: "a".repeat(64),
+              format: "zip",
+            },
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/readiness"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ready: false,
+      blockers: ["official", "clawpack"],
+      checks: expect.arrayContaining([
+        expect.objectContaining({ id: "official", status: "fail" }),
+        expect.objectContaining({ id: "clawpack", status: "fail" }),
+        expect.objectContaining({ id: "host-targets", status: "pass" }),
+      ]),
+    });
+  });
+
   it("package release moderation posts state changes", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",

@@ -1762,6 +1762,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
+  if (segments[1] === "readiness" && segments.length === 2) {
+    if (!publicPackage) return text("Not found", 404, rate.headers);
+    return json(buildPackageReadiness(publicPackage), 200, rate.headers);
+  }
+
   if (segments[1] === "versions" && segments.length === 2) {
     const limit = Math.max(
       1,
@@ -2204,7 +2209,115 @@ type PublicPackageDocLike = {
   compatibility?: Doc<"packages">["compatibility"];
   capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
+  artifact?: {
+    kind: "legacy-zip" | "npm-pack";
+    sha256?: string;
+    size?: number;
+    format?: string;
+    npmIntegrity?: string;
+    npmShasum?: string;
+    npmTarballName?: string;
+    npmUnpackedSize?: number;
+    npmFileCount?: number;
+  };
   stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;
 };
+
+type PackageReadinessCheck = {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  message: string;
+};
+
+function buildPackageReadiness(pkg: PublicPackageDocLike) {
+  const checks: PackageReadinessCheck[] = [];
+  const add = (check: PackageReadinessCheck) => checks.push(check);
+  const hostTargets = pkg.capabilities?.hostTargets ?? [];
+  const scanStatus = pkg.verification?.scanStatus ?? "not-run";
+
+  add({
+    id: "official",
+    label: "Official package",
+    status: pkg.isOfficial ? "pass" : "fail",
+    message: pkg.isOfficial ? "Package is official." : "Package is not in the official channel.",
+  });
+  add({
+    id: "latest-version",
+    label: "Latest version",
+    status: pkg.latestVersion ? "pass" : "fail",
+    message: pkg.latestVersion ? `Latest version is ${pkg.latestVersion}.` : "No latest version.",
+  });
+  add({
+    id: "clawpack",
+    label: "ClawPack artifact",
+    status: pkg.artifact?.kind === "npm-pack" ? "pass" : "fail",
+    message:
+      pkg.artifact?.kind === "npm-pack"
+        ? "Latest version has an npm-pack ClawPack artifact."
+        : "Latest version is legacy ZIP-only.",
+  });
+  add({
+    id: "artifact-digest",
+    label: "Artifact digest",
+    status: pkg.artifact?.sha256 ? "pass" : "fail",
+    message: pkg.artifact?.sha256 ? "Artifact has a SHA-256 digest." : "Artifact digest missing.",
+  });
+  add({
+    id: "source",
+    label: "Source provenance",
+    status: pkg.verification?.sourceRepo && pkg.verification?.sourceCommit ? "pass" : "fail",
+    message:
+      pkg.verification?.sourceRepo && pkg.verification?.sourceCommit
+        ? `Source is ${pkg.verification.sourceRepo}@${pkg.verification.sourceCommit}.`
+        : "Source repo and commit are required.",
+  });
+  add({
+    id: "compatibility",
+    label: "OpenClaw compatibility",
+    status:
+      pkg.compatibility?.pluginApiRange && pkg.compatibility?.builtWithOpenClawVersion
+        ? "pass"
+        : "fail",
+    message:
+      pkg.compatibility?.pluginApiRange && pkg.compatibility?.builtWithOpenClawVersion
+        ? `pluginApi=${pkg.compatibility.pluginApiRange}, builtWith=${pkg.compatibility.builtWithOpenClawVersion}.`
+        : "pluginApi range and build OpenClaw version are required.",
+  });
+  add({
+    id: "host-targets",
+    label: "Host targets",
+    status: hostTargets.length > 0 ? "pass" : "fail",
+    message:
+      hostTargets.length > 0
+        ? `Targets: ${hostTargets.join(", ")}.`
+        : "At least one host target is required.",
+  });
+  add({
+    id: "scan",
+    label: "Security scan",
+    status:
+      scanStatus === "clean"
+        ? "pass"
+        : scanStatus === "pending" || scanStatus === "not-run"
+          ? "warn"
+          : "fail",
+    message: `Scan status is ${scanStatus}.`,
+  });
+
+  const blockers = checks.filter((check) => check.status === "fail").map((check) => check.id);
+  return {
+    package: {
+      name: pkg.name,
+      displayName: pkg.displayName,
+      family: pkg.family,
+      isOfficial: pkg.isOfficial,
+      latestVersion: pkg.latestVersion ?? null,
+    },
+    ready: blockers.length === 0,
+    checks,
+    blockers,
+  };
+}

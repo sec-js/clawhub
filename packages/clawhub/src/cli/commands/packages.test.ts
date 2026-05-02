@@ -35,6 +35,7 @@ const {
   cmdInspectPackage,
   cmdBackfillPackageArtifacts,
   cmdModeratePackageRelease,
+  cmdPackageReadiness,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackage,
@@ -529,6 +530,43 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith(
       "Applied package artifact backfill: scanned 105, updated 9.",
     );
+  });
+
+  it("prints package readiness checks", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: {
+        name: "@scope/demo",
+        displayName: "Demo",
+        family: "code-plugin",
+        isOfficial: true,
+        latestVersion: "1.2.3",
+      },
+      ready: false,
+      checks: [
+        {
+          id: "clawpack",
+          label: "ClawPack artifact",
+          status: "fail",
+          message: "Latest version is legacy ZIP-only.",
+        },
+      ],
+      blockers: ["clawpack"],
+    });
+
+    await cmdPackageReadiness(makeOpts(), "@scope/demo");
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/%40scope%2Fdemo/readiness",
+        token: undefined,
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("@scope/demo readiness: blocked");
+    expect(mockLog).toHaveBeenCalledWith("FAIL clawpack: Latest version is legacy ZIP-only.");
+    expect(mockLog).toHaveBeenCalledWith("Blockers: clawpack");
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

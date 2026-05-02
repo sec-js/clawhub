@@ -382,6 +382,45 @@ Notes:
 - Legacy ZIP versions redirect to `/api/v1/packages/{name}/download?version=`.
 - Uses the download rate bucket.
 
+### `GET /api/v1/packages/{name}/readiness`
+
+Returns computed readiness for future OpenClaw consumption.
+
+Readiness checks cover:
+
+- official channel status
+- latest version availability
+- ClawPack npm-pack artifact availability
+- artifact digest
+- source repo and commit provenance
+- OpenClaw compatibility metadata
+- host targets
+- scan state
+
+Response:
+
+```json
+{
+  "package": {
+    "name": "@openclaw/example-plugin",
+    "displayName": "Example Plugin",
+    "family": "code-plugin",
+    "isOfficial": true,
+    "latestVersion": "1.2.3"
+  },
+  "ready": false,
+  "checks": [
+    {
+      "id": "clawpack",
+      "label": "ClawPack artifact",
+      "status": "fail",
+      "message": "Latest version is legacy ZIP-only."
+    }
+  ],
+  "blockers": ["clawpack"]
+}
+```
+
 ### `POST /api/v1/packages/{name}/versions/{version}/moderation`
 
 Moderator/admin endpoint for package release review.

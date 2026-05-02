@@ -23,6 +23,7 @@ import {
   cmdInspectPackage,
   cmdDeletePackageTrustedPublisher,
   cmdModeratePackageRelease,
+  cmdPackageReadiness,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackage,
@@ -460,6 +461,16 @@ packageCmd
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdBackfillPackageArtifacts(opts, options);
+  });
+
+packageCmd
+  .command("readiness")
+  .description("Check package readiness for future OpenClaw consumption")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageReadiness(opts, name, options);
   });
 
 packageCmd

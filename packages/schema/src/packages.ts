@@ -329,6 +329,28 @@ export const ApiV1PackageArtifactBackfillResponseSchema = type({
 export type ApiV1PackageArtifactBackfillResponse =
   (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
 
+export const PackageReadinessCheckSchema = type({
+  id: "string",
+  label: "string",
+  status: '"pass"|"warn"|"fail"',
+  message: "string",
+});
+export type PackageReadinessCheck = (typeof PackageReadinessCheckSchema)[inferred];
+
+export const ApiV1PackageReadinessResponseSchema = type({
+  package: type({
+    name: "string",
+    displayName: "string",
+    family: PackageFamilySchema,
+    isOfficial: "boolean",
+    latestVersion: "string|null?",
+  }),
+  ready: "boolean",
+  checks: PackageReadinessCheckSchema.array(),
+  blockers: "string[]",
+});
+export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
+
 export const ApiV1PackageReleaseModerationResponseSchema = type({
   ok: "true",
   packageId: "string",

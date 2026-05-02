@@ -12,6 +12,7 @@ import {
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackagePublishResponseSchema,
+  ApiV1PackageReadinessResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
@@ -113,6 +114,10 @@ type PackageBackfillArtifactsOptions = {
   batchSize?: number;
   apply?: boolean;
   all?: boolean;
+  json?: boolean;
+};
+
+type PackageReadinessOptions = {
   json?: boolean;
 };
 
@@ -828,6 +833,38 @@ export async function cmdBackfillPackageArtifacts(
   );
   if (!summary.done && summary.nextCursor) {
     console.log(`Next cursor: ${summary.nextCursor}`);
+  }
+}
+
+export async function cmdPackageReadiness(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageReadinessOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const token = await getOptionalAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/readiness`,
+      token,
+    },
+    ApiV1PackageReadinessResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  console.log(`${result.package.name} readiness: ${result.ready ? "ready" : "blocked"}`);
+  for (const check of result.checks) {
+    console.log(`${check.status.toUpperCase()} ${check.id}: ${check.message}`);
+  }
+  if (result.blockers.length > 0) {
+    console.log(`Blockers: ${result.blockers.join(", ")}`);
   }
 }
 

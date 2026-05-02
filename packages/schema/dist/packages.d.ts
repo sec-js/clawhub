@@ -488,6 +488,31 @@ export declare const ApiV1PackageArtifactBackfillResponseSchema: import("arktype
     dryRun: boolean;
 }, {}>;
 export type ApiV1PackageArtifactBackfillResponse = (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
+export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    id: string;
+    label: string;
+    status: "warn" | "fail" | "pass";
+    message: string;
+}, {}>;
+export type PackageReadinessCheck = (typeof PackageReadinessCheckSchema)[inferred];
+export declare const ApiV1PackageReadinessResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        isOfficial: boolean;
+        latestVersion?: string | null | undefined;
+    };
+    ready: boolean;
+    checks: {
+        id: string;
+        label: string;
+        status: "warn" | "fail" | "pass";
+        message: string;
+    }[];
+    blockers: string[];
+}, {}>;
+export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
 export declare const ApiV1PackageReleaseModerationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     packageId: string;

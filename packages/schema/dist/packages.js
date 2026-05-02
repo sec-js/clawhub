@@ -262,6 +262,24 @@ export const ApiV1PackageArtifactBackfillResponseSchema = type({
     done: "boolean",
     dryRun: "boolean",
 });
+export const PackageReadinessCheckSchema = type({
+    id: "string",
+    label: "string",
+    status: '"pass"|"warn"|"fail"',
+    message: "string",
+});
+export const ApiV1PackageReadinessResponseSchema = type({
+    package: type({
+        name: "string",
+        displayName: "string",
+        family: PackageFamilySchema,
+        isOfficial: "boolean",
+        latestVersion: "string|null?",
+    }),
+    ready: "boolean",
+    checks: PackageReadinessCheckSchema.array(),
+    blockers: "string[]",
+});
 export const ApiV1PackageReleaseModerationResponseSchema = type({
     ok: "true",
     packageId: "string",

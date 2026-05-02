@@ -345,6 +345,21 @@ clawhub package backfill-artifacts --batch-size 100
 clawhub package backfill-artifacts --all --apply
 ```
 
+### `package readiness <name>`
+
+- Checks whether a package is ready for future OpenClaw consumption.
+- Calls `GET /api/v1/packages/{name}/readiness`.
+- Reports blockers for official status, ClawPack availability, artifact digest,
+  source provenance, OpenClaw compatibility, host targets, and scan state.
+- Flags:
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package readiness @openclaw/example-plugin
+```
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
