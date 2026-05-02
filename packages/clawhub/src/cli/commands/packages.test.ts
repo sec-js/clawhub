@@ -40,6 +40,7 @@ const {
   cmdModeratePackageRelease,
   cmdPackageModerationStatus,
   cmdPackageModerationQueue,
+  cmdPackageMigrationStatus,
   cmdPackageReadiness,
   cmdPublishPackage,
   cmdReportPackage,
@@ -864,6 +865,44 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("@scope/demo readiness: blocked");
     expect(mockLog).toHaveBeenCalledWith("FAIL clawpack: Latest version is legacy ZIP-only.");
     expect(mockLog).toHaveBeenCalledWith("Blockers: clawpack");
+  });
+
+  it("prints package migration status checks", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: {
+        name: "@scope/demo",
+        displayName: "Demo",
+        family: "code-plugin",
+        isOfficial: true,
+        latestVersion: "1.2.3",
+      },
+      ready: true,
+      checks: [
+        {
+          id: "clawpack",
+          label: "ClawPack artifact",
+          status: "pass",
+          message: "Latest version has a ClawPack artifact.",
+        },
+      ],
+      blockers: [],
+    });
+
+    await cmdPackageMigrationStatus(makeOpts(), "@scope/demo");
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/%40scope%2Fdemo/readiness",
+        token: undefined,
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("@scope/demo migration: ready");
+    expect(mockLog).toHaveBeenCalledWith("Version: 1.2.3");
+    expect(mockLog).toHaveBeenCalledWith("Official: yes");
+    expect(mockLog).toHaveBeenCalledWith("PASS clawpack: Latest version has a ClawPack artifact.");
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

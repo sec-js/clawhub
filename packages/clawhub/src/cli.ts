@@ -28,6 +28,7 @@ import {
   cmdModeratePackageRelease,
   cmdPackageModerationStatus,
   cmdPackageModerationQueue,
+  cmdPackageMigrationStatus,
   cmdPackageReadiness,
   cmdPublishPackage,
   cmdReportPackage,
@@ -601,6 +602,16 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageReadiness(opts, name, options);
+  });
+
+packageCmd
+  .command("migration-status")
+  .description("Show package migration status for future OpenClaw consumption")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageMigrationStatus(opts, name, options);
   });
 
 packageCmd
