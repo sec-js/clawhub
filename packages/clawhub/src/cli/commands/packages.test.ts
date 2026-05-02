@@ -384,6 +384,60 @@ describe("package commands", () => {
     }
   });
 
+  it("downloads legacy ZIP artifacts without enforcing stale stored release digests", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const bytes = new TextEncoder().encode("rebuilt legacy zip");
+      await mkdir(join(workdir, "downloads"), { recursive: true });
+      httpMocks.apiRequest
+        .mockResolvedValueOnce({
+          package: {
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+            runtimeId: "demo.plugin",
+            channel: "community",
+            isOfficial: false,
+            summary: null,
+            latestVersion: "1.2.3",
+            createdAt: 1,
+            updatedAt: 2,
+            tags: { latest: "1.2.3" },
+          },
+          owner: null,
+        })
+        .mockResolvedValueOnce({
+          package: {
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+          },
+          version: "1.2.3",
+          artifact: {
+            kind: "legacy-zip",
+            sha256: "0".repeat(64),
+            format: "zip",
+            downloadUrl: "https://clawhub.ai/api/v1/packages/@scope/demo/download?version=1.2.3",
+            legacyDownloadUrl:
+              "https://clawhub.ai/api/v1/packages/@scope/demo/download?version=1.2.3",
+          },
+        });
+      httpMocks.fetchBinary.mockResolvedValue(bytes);
+
+      await cmdDownloadPackage(makeOpts(workdir), "@scope/demo", {
+        tag: "latest",
+        output: "downloads",
+      });
+
+      expect(await readFile(join(workdir, "downloads", "scope-demo-1.2.3.zip"))).toEqual(
+        Buffer.from(bytes),
+      );
+      expect(uiMocks.spinner.fail).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("verifies a local ClawPack against resolved artifact metadata", async () => {
     const workdir = await makeTmpWorkdir();
     try {

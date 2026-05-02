@@ -941,7 +941,9 @@ export async function cmdVerifyPackage(
       validateDownloadedArtifact(packageName, artifactResult, bytes, identity);
     }
 
-    const expectedSha256 = options.sha256?.trim() || artifactResult?.artifact.sha256;
+    const expectedSha256 =
+      options.sha256?.trim() ||
+      (artifactResult?.artifact.kind === "npm-pack" ? artifactResult.artifact.sha256 : undefined);
     const expectedNpmIntegrity =
       options.npmIntegrity?.trim() || artifactResult?.artifact.npmIntegrity;
     const expectedNpmShasum = options.npmShasum?.trim() || artifactResult?.artifact.npmShasum;
@@ -1792,11 +1794,11 @@ function validateDownloadedArtifact(
   identity: ArtifactIdentity,
 ) {
   const artifact = artifactResult.artifact;
-  assertDigestMatch("SHA-256", artifact.sha256, identity.sha256);
-  if (typeof artifact.size === "number" && artifact.size !== identity.byteLength) {
-    fail(`artifact size mismatch: expected ${artifact.size}, got ${identity.byteLength}`);
-  }
   if (artifact.kind === "npm-pack") {
+    assertDigestMatch("SHA-256", artifact.sha256, identity.sha256);
+    if (typeof artifact.size === "number" && artifact.size !== identity.byteLength) {
+      fail(`artifact size mismatch: expected ${artifact.size}, got ${identity.byteLength}`);
+    }
     assertDigestMatch("npm integrity", artifact.npmIntegrity, identity.npmIntegrity);
     assertDigestMatch("npm shasum", artifact.npmShasum, identity.npmShasum);
     const parsed = parseClawPack(bytes);
@@ -1815,6 +1817,11 @@ function validateDownloadedArtifact(
         `Resolved package mismatch: expected ${requestedPackageName}, got ${artifactResult.package.name}`,
       );
     }
+  }
+  if (requestedPackageName !== artifactResult.package.name) {
+    fail(
+      `Resolved package mismatch: expected ${requestedPackageName}, got ${artifactResult.package.name}`,
+    );
   }
 }
 
