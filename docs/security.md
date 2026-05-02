@@ -64,6 +64,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - New skill publishes now persist a deterministic static scan result on the version.
 - Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
   so legacy plugin versions can surface OpenClaw scan findings without republishing.
+- ClawPack package releases keep static/LLM scan inputs intentionally metadata-only for now:
+  `package.json`, `openclaw.plugin.json`, package/source metadata, and release facts. VirusTotal
+  scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
+  tarball file.
 - Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
   undetected engine results, provided the LLM scan is clean and static scan is non-malicious. This
   avoids indefinite pending scans when VT Code Insight never materializes.

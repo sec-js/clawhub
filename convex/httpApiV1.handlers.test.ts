@@ -5231,7 +5231,7 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("multipart ClawPack publish stores the tarball and only operational JSON metadata", async () => {
+  it("multipart ClawPack publish stores the tarball and keeps static/LLM scans metadata-only", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
