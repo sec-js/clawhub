@@ -3894,6 +3894,92 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package reports lists moderator report intake", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        items: [
+          {
+            reportId: "packageReports:1",
+            packageId: "packages:1",
+            releaseId: "packageReleases:1",
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+            version: "1.2.3",
+            reason: "suspicious",
+            status: "open",
+            createdAt: 123,
+            reporter: { userId: "users:reporter", handle: "reporter", displayName: "Reporter" },
+            triagedAt: null,
+            triagedBy: null,
+            triageNote: null,
+          },
+        ],
+        nextCursor: null,
+        done: true,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/reports?status=open&limit=10", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ reportId: "packageReports:1", name: "@scope/demo" }],
+    });
+    expect(runQuery).toHaveBeenCalledWith(internal.packages.listPackageReportsInternal, {
+      actorUserId: "users:moderator",
+      cursor: null,
+      limit: 10,
+      status: "open",
+    });
+  });
+
+  it("package report triage posts moderator decisions", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        reportId: "packageReports:1",
+        packageId: "packages:1",
+        status: "triaged",
+        reportCount: 0,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/reports/packageReports%3A1/triage", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ status: "triaged", note: "handled" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "triaged" });
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.triagePackageReportForUserInternal, {
+      actorUserId: "users:moderator",
+      reportId: "packageReports:1",
+      status: "triaged",
+      note: "handled",
+    });
+  });
+
   it("package artifact backfill posts admin dry-run requests", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

@@ -22,12 +22,14 @@ import {
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdDeletePackageTrustedPublisher,
+  cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
   cmdPackageReadiness,
   cmdPublishPackage,
   cmdReportPackage,
   cmdSetPackageTrustedPublisher,
+  cmdTriagePackageReport,
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
@@ -475,6 +477,35 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdReportPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("reports")
+  .description("List package reports for moderator review")
+  .option("--status <status>", "open|triaged|dismissed|all", "open")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option(
+    "--limit <n>",
+    "Number of reports to show (max 100)",
+    (value) => Number.parseInt(value, 10),
+    25,
+  )
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListPackageReports(opts, options);
+  });
+
+packageCmd
+  .command("triage-report")
+  .description("Resolve or reopen a package report")
+  .argument("<report-id>", "Package report id")
+  .requiredOption("--status <status>", "open|triaged|dismissed")
+  .option("--note <text>", "Triage note; required unless reopening")
+  .option("--json", "Output JSON")
+  .action(async (reportId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdTriagePackageReport(opts, reportId, options);
   });
 
 packageCmd

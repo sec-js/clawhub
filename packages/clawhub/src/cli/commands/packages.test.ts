@@ -34,12 +34,14 @@ const {
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdBackfillPackageArtifacts,
+  cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
   cmdPackageReadiness,
   cmdPublishPackage,
   cmdReportPackage,
   cmdSetPackageTrustedPublisher,
+  cmdTriagePackageReport,
   cmdVerifyPackage,
 } = await import("./packages");
 
@@ -510,6 +512,70 @@ describe("package commands", () => {
       expect.anything(),
     );
     expect(mockLog).toHaveBeenCalledWith("OK. Reported @scope/demo@1.2.3 for moderator review.");
+  });
+
+  it("lists package reports", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          reportId: "packageReports:1",
+          packageId: "pkg_1",
+          releaseId: "rel_1",
+          name: "@scope/demo",
+          displayName: "Demo",
+          family: "code-plugin",
+          version: "1.2.3",
+          reason: "suspicious",
+          status: "open",
+          createdAt: 1,
+          reporter: { userId: "users:reporter", handle: "reporter", displayName: "Reporter" },
+          triagedAt: null,
+          triagedBy: null,
+          triageNote: null,
+        },
+      ],
+      nextCursor: null,
+      done: true,
+    });
+
+    await cmdListPackageReports(makeOpts(), { status: "open", limit: 10 });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages/reports");
+    expect(url.searchParams.get("status")).toBe("open");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(mockLog).toHaveBeenCalledWith("packageReports:1 open @scope/demo@1.2.3");
+  });
+
+  it("triages package reports", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      reportId: "packageReports:1",
+      packageId: "pkg_1",
+      status: "triaged",
+      reportCount: 0,
+    });
+
+    await cmdTriagePackageReport(makeOpts(), "packageReports:1", {
+      status: "triaged",
+      note: "handled",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/reports/packageReports%3A1/triage",
+        token: "tkn",
+        body: {
+          status: "triaged",
+          note: "handled",
+        },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Report packageReports:1 set to triaged.");
   });
 
   it("lists the package moderation queue", async () => {

@@ -1295,12 +1295,17 @@ const packageReports = defineTable({
   version: v.optional(v.string()),
   userId: v.id("users"),
   reason: v.optional(v.string()),
+  status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+  triagedAt: v.optional(v.number()),
+  triagedBy: v.optional(v.id("users")),
+  triageNote: v.optional(v.string()),
   createdAt: v.number(),
 })
   .index("by_package", ["packageId"])
   .index("by_package_createdAt", ["packageId", "createdAt"])
   .index("by_release", ["releaseId"])
   .index("by_createdAt", ["createdAt"])
+  .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user", ["userId"])
   .index("by_package_user", ["packageId", "userId"]);
 

@@ -41,6 +41,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Package reports feed `package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators must explicitly approve,
   quarantine, or revoke package releases.
+- Package reports can be moved to `triaged` or `dismissed` with a moderator
+  note. Only `open` reports count toward `packages.reportCount` and user active
+  report limits; triaging a report decrements the open count.
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude

@@ -71,6 +71,12 @@ export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
 export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
 export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
 
+export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
+export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
+
+export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
+export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
+
 export const PackageArtifactSummarySchema = type({
   kind: PackageArtifactKindSchema,
   sha256: "string?",
@@ -325,6 +331,49 @@ export const ApiV1PackageReportResponseSchema = type({
   reportCount: "number",
 });
 export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
+
+export const PackageReportTriageRequestSchema = type({
+  status: PackageReportStatusSchema,
+  note: "string?",
+});
+export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
+
+export const ApiV1PackageReportListResponseSchema = type({
+  items: type({
+    reportId: "string",
+    packageId: "string",
+    releaseId: "string|null?",
+    name: "string",
+    displayName: "string",
+    family: PackageFamilySchema,
+    version: "string|null?",
+    reason: "string|null?",
+    status: PackageReportStatusSchema,
+    createdAt: "number",
+    reporter: type({
+      userId: "string",
+      handle: "string|null?",
+      displayName: "string|null?",
+    }),
+    triagedAt: "number|null?",
+    triagedBy: "string|null?",
+    triageNote: "string|null?",
+  }).array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1PackageReportListResponse =
+  (typeof ApiV1PackageReportListResponseSchema)[inferred];
+
+export const ApiV1PackageReportTriageResponseSchema = type({
+  ok: "true",
+  reportId: "string",
+  packageId: "string",
+  status: PackageReportStatusSchema,
+  reportCount: "number",
+});
+export type ApiV1PackageReportTriageResponse =
+  (typeof ApiV1PackageReportTriageResponseSchema)[inferred];
 
 export const PackageArtifactBackfillRequestSchema = type({
   cursor: "string|null?",

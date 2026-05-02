@@ -11,7 +11,9 @@ import {
   publishPackage,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
+  listPackageReportsInternal,
   reportPackageForUserInternal,
+  triagePackageReportForUserInternal,
   getVersionByName,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
@@ -239,6 +241,38 @@ const reportPackageForUserInternalHandler = (
       alreadyReported: boolean;
       packageId: string;
       releaseId: string | null;
+      reportCount: number;
+    }
+  >
+)._handler;
+const listPackageReportsInternalHandler = (
+  listPackageReportsInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      cursor?: string | null;
+      limit?: number;
+      status?: "open" | "triaged" | "dismissed" | "all";
+    },
+    {
+      items: Array<{ reportId: string; name: string; status: string; reason?: string | null }>;
+      nextCursor: string | null;
+      done: boolean;
+    }
+  >
+)._handler;
+const triagePackageReportForUserInternalHandler = (
+  triagePackageReportForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      reportId: string;
+      status: "open" | "triaged" | "dismissed";
+      note?: string;
+    },
+    {
+      ok: true;
+      reportId: string;
+      packageId: string;
+      status: string;
       reportCount: number;
     }
   >
@@ -3416,6 +3450,7 @@ describe("packages public queries", () => {
       version: "1.2.3",
       userId: "users:reporter",
       reason: "x".repeat(500),
+      status: "open",
       createdAt: expect.any(Number),
     });
     expect(patch).toHaveBeenCalledWith("packages:demo", {
@@ -3460,6 +3495,7 @@ describe("packages public queries", () => {
                     packageId: "packages:demo",
                     releaseId: "packageReleases:demo-1",
                     userId: "users:reporter",
+                    status: "open",
                   }),
                 })),
               };
@@ -3488,6 +3524,123 @@ describe("packages public queries", () => {
     });
     expect(insert).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("lists package reports for moderators", async () => {
+    const result = await listPackageReportsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "users:reporter") {
+              return { _id: id, handle: "reporter", displayName: "Reporter" };
+            }
+            if (id === "packages:demo") return makePackageDoc({ name: "@scope/demo" });
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "packageReports") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        _id: "packageReports:1",
+                        packageId: "packages:demo",
+                        releaseId: "packageReleases:demo-1",
+                        version: "1.2.3",
+                        userId: "users:reporter",
+                        reason: "suspicious",
+                        status: "open",
+                        createdAt: 123,
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:moderator", status: "open", limit: 10 },
+    );
+
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          reportId: "packageReports:1",
+          name: "@scope/demo",
+          version: "1.2.3",
+          reason: "suspicious",
+          status: "open",
+          reporter: expect.objectContaining({ handle: "reporter" }),
+        }),
+      ],
+      nextCursor: null,
+      done: true,
+    });
+  });
+
+  it("triages package reports and decrements open count", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn(async () => "auditLogs:1");
+
+    const result = await triagePackageReportForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packageReports:1") {
+              return {
+                _id: id,
+                packageId: "packages:demo",
+                userId: "users:reporter",
+                status: "open",
+                createdAt: 123,
+              };
+            }
+            if (id === "packages:demo") return makePackageDoc({ reportCount: 2 });
+            return null;
+          }),
+          patch,
+          insert,
+          query: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:moderator",
+        reportId: "packageReports:1",
+        status: "triaged",
+        note: "handled",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      reportId: "packageReports:1",
+      status: "triaged",
+      reportCount: 1,
+    });
+    expect(patch).toHaveBeenCalledWith("packageReports:1", {
+      status: "triaged",
+      triagedAt: expect.any(Number),
+      triagedBy: "users:moderator",
+      triageNote: "handled",
+    });
+    expect(patch).toHaveBeenCalledWith("packages:demo", { reportCount: 1 });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.report.triage",
+        targetType: "packageReport",
+      }),
+    );
   });
 });
 
@@ -3522,6 +3675,7 @@ describe("package scan backfill", () => {
                         packageId: "packages:demo",
                         releaseId: "packageReleases:latest",
                         userId: "users:reporter",
+                        status: "open",
                         createdAt: 500,
                       },
                     ]),
@@ -3637,6 +3791,7 @@ describe("package scan backfill", () => {
                         packageId: "packages:demo",
                         releaseId: "packageReleases:latest",
                         userId: "users:reporter",
+                        status: "open",
                         createdAt: 500,
                       },
                     ]),

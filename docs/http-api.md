@@ -522,6 +522,76 @@ Response:
 }
 ```
 
+### `GET /api/v1/packages/reports`
+
+Moderator/admin endpoint for package report intake.
+
+Auth:
+
+- Requires an API token for a moderator or admin user.
+
+Query params:
+
+- `status` (optional): `open` (default), `triaged`, `dismissed`, or `all`
+- `limit` (optional): integer (1-100)
+- `cursor` (optional): pagination cursor
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "reportId": "packageReports:...",
+      "packageId": "packages:...",
+      "releaseId": "packageReleases:...",
+      "name": "@openclaw/example-plugin",
+      "displayName": "Example Plugin",
+      "family": "code-plugin",
+      "version": "1.2.3",
+      "reason": "Suspicious native binary",
+      "status": "open",
+      "createdAt": 1730000000000,
+      "reporter": {
+        "userId": "users:...",
+        "handle": "reporter",
+        "displayName": "Reporter"
+      },
+      "triagedAt": null,
+      "triagedBy": null,
+      "triageNote": null
+    }
+  ],
+  "nextCursor": null,
+  "done": true
+}
+```
+
+### `POST /api/v1/packages/reports/{reportId}/triage`
+
+Moderator/admin endpoint for resolving or reopening package reports.
+
+Request:
+
+```json
+{ "status": "triaged", "note": "Reviewed and quarantined affected release." }
+```
+
+`note` is required for `triaged` and `dismissed`; it may be omitted when
+setting `status` back to `open`.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "reportId": "packageReports:...",
+  "packageId": "packages:...",
+  "status": "triaged",
+  "reportCount": 0
+}
+```
+
 ### `POST /api/v1/packages/{name}/versions/{version}/moderation`
 
 Moderator/admin endpoint for package release review.

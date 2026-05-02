@@ -57,6 +57,10 @@ export declare const PackageArtifactKindSchema: import("arktype/internal/variant
 export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
 export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
 export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
+export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed", {}>;
+export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
+export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed" | "all", {}>;
+export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
 export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "legacy-zip" | "npm-pack";
     sha256?: string | undefined;
@@ -487,6 +491,44 @@ export declare const ApiV1PackageReportResponseSchema: import("arktype/internal/
     reportCount: number;
 }, {}>;
 export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
+export declare const PackageReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "open" | "triaged" | "dismissed";
+    note?: string | undefined;
+}, {}>;
+export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
+export declare const ApiV1PackageReportListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        reportId: string;
+        packageId: string;
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        status: "open" | "triaged" | "dismissed";
+        createdAt: number;
+        reporter: {
+            userId: string;
+            handle?: string | null | undefined;
+            displayName?: string | null | undefined;
+        };
+        releaseId?: string | null | undefined;
+        version?: string | null | undefined;
+        reason?: string | null | undefined;
+        triagedAt?: number | null | undefined;
+        triagedBy?: string | null | undefined;
+        triageNote?: string | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageReportListResponse = (typeof ApiV1PackageReportListResponseSchema)[inferred];
+export declare const ApiV1PackageReportTriageResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    reportId: string;
+    packageId: string;
+    status: "open" | "triaged" | "dismissed";
+    reportCount: number;
+}, {}>;
+export type ApiV1PackageReportTriageResponse = (typeof ApiV1PackageReportTriageResponseSchema)[inferred];
 export declare const PackageArtifactBackfillRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
@@ -527,7 +569,7 @@ export declare const ApiV1PackageReadinessResponseSchema: import("arktype/intern
     blockers: string[];
 }, {}>;
 export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
-export declare const PackageModerationQueueStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "blocked" | "manual" | "all", {}>;
+export declare const PackageModerationQueueStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "blocked" | "manual", {}>;
 export type PackageModerationQueueStatus = (typeof PackageModerationQueueStatusSchema)[inferred];
 export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {

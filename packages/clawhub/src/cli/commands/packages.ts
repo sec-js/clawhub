@@ -15,7 +15,9 @@ import {
   ApiV1PackagePublishResponseSchema,
   ApiV1PackageReadinessResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
+  ApiV1PackageReportListResponseSchema,
   ApiV1PackageReportResponseSchema,
+  ApiV1PackageReportTriageResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
   ApiV1PackageTrustedPublisherResponseSchema,
@@ -28,6 +30,8 @@ import {
   type PackageCompatibility,
   type PackageFamily,
   type PackageModerationQueueStatus,
+  type PackageReportListStatus,
+  type PackageReportStatus,
   type PackageReleaseModerationState,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
@@ -128,6 +132,19 @@ type PackageModerateOptions = {
 type PackageReportOptions = {
   version?: string;
   reason?: string;
+  json?: boolean;
+};
+
+type PackageReportListOptions = {
+  status?: PackageReportListStatus;
+  cursor?: string;
+  limit?: number;
+  json?: boolean;
+};
+
+type PackageReportTriageOptions = {
+  status?: PackageReportStatus;
+  note?: string;
   json?: boolean;
 };
 
@@ -861,6 +878,97 @@ export async function cmdReportPackage(
     }
     const versionSuffix = version ? `@${version}` : "";
     console.log(`OK. Reported ${trimmed}${versionSuffix} for moderator review.`);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdListPackageReports(
+  opts: GlobalOpts,
+  options: PackageReportListOptions = {},
+) {
+  const status = options.status?.trim() || "open";
+  if (!["open", "triaged", "dismissed", "all"].includes(status)) {
+    fail("--status must be open, triaged, dismissed, or all");
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.packages}/reports`, registry);
+  url.searchParams.set("status", status);
+  if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
+  url.searchParams.set("limit", String(clampLimit(options.limit ?? 25, 100)));
+
+  const result = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      url: url.toString(),
+      token,
+    },
+    ApiV1PackageReportListResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  if (result.items.length === 0) {
+    console.log("No package reports found.");
+  } else {
+    for (const item of result.items) {
+      const version = item.version ? `@${item.version}` : "";
+      const reporter = item.reporter.handle ?? item.reporter.userId;
+      console.log(`${item.reportId} ${item.status} ${item.name}${version}`);
+      console.log(`  reporter: ${reporter}`);
+      if (item.reason) console.log(`  reason: ${item.reason}`);
+      if (item.triageNote) console.log(`  triage: ${item.triageNote}`);
+    }
+  }
+  if (!result.done && result.nextCursor) {
+    console.log(`Next cursor: ${result.nextCursor}`);
+  }
+}
+
+export async function cmdTriagePackageReport(
+  opts: GlobalOpts,
+  reportId: string,
+  options: PackageReportTriageOptions = {},
+) {
+  const trimmed = reportId.trim();
+  if (!trimmed) fail("Report id required");
+  const status = options.status?.trim();
+  if (!status || !["open", "triaged", "dismissed"].includes(status)) {
+    fail("--status must be open, triaged, or dismissed");
+  }
+  const note = options.note?.trim();
+  if (status !== "open" && !note) fail("--note required unless reopening");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Updating report ${trimmed}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/reports/${encodeURIComponent(trimmed)}/triage`,
+        token,
+        body: {
+          status,
+          ...(note ? { note } : {}),
+        },
+      },
+      ApiV1PackageReportTriageResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`OK. Report ${trimmed} set to ${result.status}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

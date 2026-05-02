@@ -350,6 +350,38 @@ Example:
 clawhub package report @openclaw/example-plugin --version 1.2.3 --reason "suspicious native payload"
 ```
 
+### `package reports`
+
+- Moderator/admin command for listing package reports.
+- Calls `GET /api/v1/packages/reports`.
+- Flags:
+  - `--status open|triaged|dismissed|all`: report state filter, default `open`.
+  - `--cursor <cursor>`: resume cursor from a previous page.
+  - `--limit <n>`: number of reports to show, max 100.
+  - `--json`: machine-readable output.
+
+Examples:
+
+```bash
+clawhub package reports
+clawhub package reports --status all --limit 50
+```
+
+### `package triage-report`
+
+- Moderator/admin command for resolving or reopening package reports.
+- Calls `POST /api/v1/packages/reports/{reportId}/triage`.
+- Flags:
+  - `--status open|triaged|dismissed`: required report state.
+  - `--note <text>`: required unless `--status open`.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package triage-report packageReports:abc --status triaged --note "quarantined affected release"
+```
+
 ### `package moderation-queue`
 
 - Moderator/admin command for reviewing package releases that need attention.

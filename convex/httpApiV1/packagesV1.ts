@@ -1,12 +1,14 @@
 import {
   PackageArtifactBackfillRequestSchema,
   PackageReportRequestSchema,
+  PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
   PackagePublishRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
   parseArk,
   type PackageModerationQueueStatus,
+  type PackageReportListStatus,
 } from "clawhub-schema";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -72,6 +74,8 @@ const internalRefs = internal as unknown as {
     softDeletePackageInternal: unknown;
     moderatePackageReleaseForUserInternal: unknown;
     reportPackageForUserInternal: unknown;
+    listPackageReportsInternal: unknown;
+    triagePackageReportForUserInternal: unknown;
     backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
   };
@@ -175,6 +179,20 @@ function parsePackageModerationQueueStatus(
     normalized === "open" ||
     normalized === "blocked" ||
     normalized === "manual" ||
+    normalized === "all"
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function parsePackageReportListStatus(value: string | null): PackageReportListStatus | null {
+  if (!value) return "open";
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "open" ||
+    normalized === "triaged" ||
+    normalized === "dismissed" ||
     normalized === "all"
   ) {
     return normalized;
@@ -1367,6 +1385,46 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   }
 
   if (
+    segments[0] === "reports" &&
+    segments[1] &&
+    segments[2] === "triage" &&
+    segments.length === 3
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageReportTriageRequestSchema,
+        await request.json(),
+        "Package report triage payload",
+      ) as {
+        status: "open" | "triaged" | "dismissed";
+        note?: string;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.triagePackageReportForUserInternal,
+        {
+          actorUserId: auth.userId,
+          reportId: segments[1] as Id<"packageReports">,
+          status: body.status,
+          ...(body.note ? { note: body.note } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package report triage failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (
     segments[1] === "versions" &&
     segments[2] &&
     segments[3] === "moderation" &&
@@ -1821,6 +1879,26 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         status,
       },
     );
+    return json(result, 200, rate.headers);
+  }
+
+  if (segments[0] === "reports" && segments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    const url = new URL(request.url);
+    const status = parsePackageReportListStatus(url.searchParams.get("status"));
+    if (!status) return text("Invalid package report status", 400, rate.headers);
+    const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
+    const cursor = url.searchParams.get("cursor");
+    const result = await runQueryRef(ctx, internalRefs.packages.listPackageReportsInternal, {
+      actorUserId: auth.userId,
+      cursor: cursor ?? null,
+      limit,
+      status,
+    });
     return json(result, 200, rate.headers);
   }
 

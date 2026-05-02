@@ -173,6 +173,7 @@ type PublicPackageListItem = {
   verificationTier: PackageVerificationTier | null;
 };
 type PackageReleaseScanStatus = ReturnType<typeof resolvePackageReleaseScanStatus>;
+type PackageReportStatus = "open" | "triaged" | "dismissed";
 type PackageModerationQueueItem = {
   packageId: Id<"packages">;
   releaseId: Id<"packageReleases">;
@@ -192,6 +193,26 @@ type PackageModerationQueueItem = {
   reportCount: number;
   lastReportedAt?: number | null;
   reasons: string[];
+};
+type PackageReportListItem = {
+  reportId: Id<"packageReports">;
+  packageId: Id<"packages">;
+  releaseId?: Id<"packageReleases"> | null;
+  name: string;
+  displayName: string;
+  family: PackageFamily;
+  version?: string | null;
+  reason?: string | null;
+  status: PackageReportStatus;
+  createdAt: number;
+  reporter: {
+    userId: Id<"users">;
+    handle?: string | null;
+    displayName?: string | null;
+  };
+  triagedAt?: number | null;
+  triagedBy?: Id<"users"> | null;
+  triageNote?: string | null;
 };
 
 function getPackageOwnerKey(
@@ -2150,6 +2171,7 @@ async function countActivePackageReportsForUser(ctx: MutationCtx, userId: Id<"us
 
   let count = 0;
   for (const report of reports) {
+    if (report.status !== "open") continue;
     const pkg = await ctx.db.get(report.packageId);
     if (!pkg || pkg.softDeletedAt) continue;
     const owner = await ctx.db.get(pkg.ownerUserId);
@@ -2201,6 +2223,51 @@ export const reportPackageForUserInternal = internalMutation({
       .withIndex("by_package_user", (q) => q.eq("packageId", pkg._id).eq("userId", actor._id))
       .unique();
     if (existing) {
+      if (existing.status !== "open") {
+        const activeReports = await countActivePackageReportsForUser(ctx, actor._id);
+        if (activeReports >= MAX_ACTIVE_REPORTS_PER_USER) {
+          throw new ConvexError(
+            "Report limit reached. Please wait for moderation before reporting more.",
+          );
+        }
+        const now = Date.now();
+        await ctx.db.patch(existing._id, {
+          ...(release ? { releaseId: release._id, version: release.version } : {}),
+          reason: reason.slice(0, MAX_REPORT_REASON_LENGTH),
+          status: "open",
+          triagedAt: undefined,
+          triagedBy: undefined,
+          triageNote: undefined,
+          createdAt: now,
+        });
+        const nextReportCount = (pkg.reportCount ?? 0) + 1;
+        await ctx.db.patch(pkg._id, {
+          reportCount: nextReportCount,
+          lastReportedAt: now,
+        });
+        await ctx.db.insert("auditLogs", {
+          actorUserId: actor._id,
+          action: "package.report.reopen",
+          targetType: "package",
+          targetId: pkg._id,
+          metadata: {
+            reportId: existing._id,
+            packageName: pkg.name,
+            releaseId: release?._id ?? null,
+            version: release?.version ?? version ?? null,
+            reportCount: nextReportCount,
+          },
+          createdAt: now,
+        });
+        return {
+          ok: true as const,
+          reported: true,
+          alreadyReported: false,
+          packageId: pkg._id,
+          releaseId: release?._id ?? existing.releaseId ?? null,
+          reportCount: nextReportCount,
+        };
+      }
       return {
         ok: true as const,
         reported: false,
@@ -2224,6 +2291,7 @@ export const reportPackageForUserInternal = internalMutation({
       ...(release ? { releaseId: release._id, version: release.version } : {}),
       userId: actor._id,
       reason: reason.slice(0, MAX_REPORT_REASON_LENGTH),
+      status: "open",
       createdAt: now,
     });
 
@@ -2258,6 +2326,140 @@ export const reportPackageForUserInternal = internalMutation({
   },
 });
 
+function toPackageReportListItem(
+  report: Doc<"packageReports">,
+  pkg: Doc<"packages">,
+  reporter: Doc<"users"> | null,
+): PackageReportListItem {
+  return {
+    reportId: report._id,
+    packageId: pkg._id,
+    releaseId: report.releaseId ?? null,
+    name: pkg.name,
+    displayName: pkg.displayName,
+    family: pkg.family,
+    version: report.version ?? null,
+    reason: report.reason ?? null,
+    status: report.status,
+    createdAt: report.createdAt,
+    reporter: {
+      userId: report.userId,
+      handle: reporter?.handle ?? null,
+      displayName: reporter?.displayName ?? reporter?.name ?? null,
+    },
+    triagedAt: report.triagedAt ?? null,
+    triagedBy: report.triagedBy ?? null,
+    triageNote: report.triageNote ?? null,
+  };
+}
+
+export const listPackageReportsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    status: v.optional(
+      v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed"), v.literal("all")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
+    const status = args.status ?? "open";
+    const reportQuery =
+      status === "all"
+        ? ctx.db.query("packageReports").withIndex("by_createdAt", (q) => q)
+        : ctx.db
+            .query("packageReports")
+            .withIndex("by_status_createdAt", (q) => q.eq("status", status));
+    const page = await reportQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+
+    const items: PackageReportListItem[] = [];
+    for (const report of page.page) {
+      const pkg = await ctx.db.get(report.packageId);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+      const reporter = await ctx.db.get(report.userId);
+      items.push(toPackageReportListItem(report, pkg, reporter));
+    }
+
+    return {
+      items,
+      nextCursor: page.isDone ? null : page.continueCursor,
+      done: page.isDone,
+    };
+  },
+});
+
+export const triagePackageReportForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    reportId: v.id("packageReports"),
+    status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const report = await ctx.db.get(args.reportId);
+    if (!report) throw new ConvexError("Package report not found");
+    const pkg = await ctx.db.get(report.packageId);
+    if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package report not found");
+
+    const now = Date.now();
+    const wasOpen = report.status === "open";
+    const willBeOpen = args.status === "open";
+    const note = args.note?.trim();
+    if (!willBeOpen && !note) throw new ConvexError("Triage note required.");
+
+    await ctx.db.patch(report._id, {
+      status: args.status,
+      triagedAt: willBeOpen ? undefined : now,
+      triagedBy: willBeOpen ? undefined : actor._id,
+      triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
+    });
+
+    let reportCount = pkg.reportCount ?? 0;
+    if (wasOpen && !willBeOpen) reportCount = Math.max(0, reportCount - 1);
+    if (!wasOpen && willBeOpen) reportCount += 1;
+    if (reportCount !== (pkg.reportCount ?? 0)) {
+      await ctx.db.patch(pkg._id, {
+        reportCount,
+        ...(willBeOpen ? { lastReportedAt: now } : {}),
+      });
+    }
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "package.report.triage",
+      targetType: "packageReport",
+      targetId: report._id,
+      metadata: {
+        packageId: pkg._id,
+        packageName: pkg.name,
+        status: args.status,
+        reportCount,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      reportId: report._id,
+      packageId: pkg._id,
+      status: args.status,
+      reportCount,
+    };
+  },
+});
+
 export const listPackageModerationQueueInternal = internalQuery({
   args: {
     actorUserId: v.id("users"),
@@ -2283,7 +2485,7 @@ export const listPackageModerationQueueInternal = internalQuery({
     if (status === "open" || status === "all") {
       const reports = await ctx.db
         .query("packageReports")
-        .withIndex("by_createdAt", (q) => q)
+        .withIndex("by_status_createdAt", (q) => q.eq("status", "open"))
         .order("desc")
         .take(limit * 3);
 

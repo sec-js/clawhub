@@ -48,6 +48,8 @@ export const PackageStatsSchema = type({
 });
 export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
 export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
+export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
+export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
 export const PackageArtifactSummarySchema = type({
     kind: PackageArtifactKindSchema,
     sha256: "string?",
@@ -259,6 +261,41 @@ export const ApiV1PackageReportResponseSchema = type({
     alreadyReported: "boolean",
     packageId: "string",
     releaseId: "string|null",
+    reportCount: "number",
+});
+export const PackageReportTriageRequestSchema = type({
+    status: PackageReportStatusSchema,
+    note: "string?",
+});
+export const ApiV1PackageReportListResponseSchema = type({
+    items: type({
+        reportId: "string",
+        packageId: "string",
+        releaseId: "string|null?",
+        name: "string",
+        displayName: "string",
+        family: PackageFamilySchema,
+        version: "string|null?",
+        reason: "string|null?",
+        status: PackageReportStatusSchema,
+        createdAt: "number",
+        reporter: type({
+            userId: "string",
+            handle: "string|null?",
+            displayName: "string|null?",
+        }),
+        triagedAt: "number|null?",
+        triagedBy: "string|null?",
+        triageNote: "string|null?",
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1PackageReportTriageResponseSchema = type({
+    ok: "true",
+    reportId: "string",
+    packageId: "string",
+    status: PackageReportStatusSchema,
     reportCount: "number",
 });
 export const PackageArtifactBackfillRequestSchema = type({
