@@ -1906,14 +1906,50 @@ function packageJsonString(value: Record<string, unknown> | null, key: string): 
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }
 
+const REAL_BUNDLE_MANIFESTS = [
+  { path: ".codex-plugin/plugin.json", format: "codex" },
+  { path: ".claude-plugin/plugin.json", format: "claude" },
+  { path: ".cursor-plugin/plugin.json", format: "cursor" },
+] as const;
+
+function hasRealBundleMarker(fileSet: Set<string>) {
+  return (
+    REAL_BUNDLE_MANIFESTS.some((marker) => fileSet.has(marker.path)) ||
+    Array.from(fileSet).some(
+      (path) =>
+        path.startsWith("skills/") ||
+        path.startsWith("commands/") ||
+        path.startsWith("agents/") ||
+        path === "hooks/hooks.json" ||
+        path === ".mcp.json" ||
+        path === ".lsp.json" ||
+        path === "settings.json",
+    )
+  );
+}
+
 function detectPackageFamily(
   fileSet: Set<string>,
   explicit?: "code-plugin" | "bundle-plugin",
 ): "code-plugin" | "bundle-plugin" {
   if (explicit) return explicit;
+  if (hasRealBundleMarker(fileSet)) return "bundle-plugin";
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
-  if (fileSet.has("openclaw.bundle.json")) return "bundle-plugin";
   return fail("Could not detect package family. Use --family.");
+}
+
+async function readBundleManifestInfo(
+  filesOnDisk: PackageFile[],
+  folder: string,
+  parsedClawpack: ReturnType<typeof parseClawPack> | undefined,
+) {
+  for (const marker of REAL_BUNDLE_MANIFESTS) {
+    const manifest =
+      readJsonEntry(filesOnDisk, marker.path) ??
+      (parsedClawpack ? null : await readJsonFile(join(folder, marker.path)));
+    if (manifest) return { manifest, format: marker.format };
+  }
+  return { manifest: null, format: undefined };
 }
 
 function parseTags(value: string) {
@@ -2010,9 +2046,8 @@ async function preparePackagePublishPlan(
   const pluginManifest =
     readJsonEntry(filesOnDisk, "openclaw.plugin.json") ??
     (parsedClawpack ? null : await readJsonFile(join(folder, "openclaw.plugin.json")));
-  const bundleManifest =
-    readJsonEntry(filesOnDisk, "openclaw.bundle.json") ??
-    (parsedClawpack ? null : await readJsonFile(join(folder, "openclaw.bundle.json")));
+  const bundleManifestInfo = await readBundleManifestInfo(filesOnDisk, folder, parsedClawpack);
+  const bundleManifest = bundleManifestInfo.manifest;
   const family = detectPackageFamily(fileSet, options.family);
   const name =
     options.name?.trim() ||
@@ -2039,22 +2074,16 @@ async function preparePackagePublishPlan(
   if (!name) fail("--name required");
   if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
+  if (!fileSet.has("openclaw.plugin.json")) fail("openclaw.plugin.json required");
   if (family === "code-plugin" && !semver.valid(version)) {
     fail("--version must be valid semver for code plugins");
   }
   if (family === "code-plugin") {
     if (!fileSet.has("package.json")) fail("package.json required");
-    if (!fileSet.has("openclaw.plugin.json")) fail("openclaw.plugin.json required");
     if (!source) fail("--source-repo and --source-commit required for code plugins");
     const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
     if (validation.issues.length > 0) {
       fail(validation.issues.map((issue) => issue.message).join(" "));
-    }
-  }
-  if (family === "bundle-plugin") {
-    const hostTargets = parseCsv(options.hostTargets);
-    if (!fileSet.has("openclaw.bundle.json") && hostTargets.length === 0) {
-      fail("Bundle plugins need openclaw.bundle.json or --host-targets");
     }
   }
 
@@ -2073,7 +2102,7 @@ async function preparePackagePublishPlan(
     ...(family === "bundle-plugin"
       ? {
           bundle: {
-            format: options.bundleFormat?.trim() || undefined,
+            format: options.bundleFormat?.trim() || bundleManifestInfo.format,
             hostTargets: parseCsv(options.hostTargets),
           },
         }

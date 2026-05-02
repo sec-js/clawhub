@@ -171,6 +171,7 @@ describe("packageRegistry", () => {
           },
         },
       },
+      pluginManifest: { id: "matrix-bundle" },
       bundleManifest: {
         hostTargets: ["openclaw"],
       },
@@ -185,6 +186,7 @@ describe("packageRegistry", () => {
     const result = extractBundlePluginArtifacts({
       packageName: "demo-bundle",
       packageJson: { name: "demo-bundle" },
+      pluginManifest: { id: "demo-bundle" },
     });
 
     expect(result.capabilities.hostTargets).toEqual([]);

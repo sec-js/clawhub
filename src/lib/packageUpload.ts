@@ -20,7 +20,9 @@ type NormalizedPackageUploadFile<TFile extends UploadablePackageFile = Uploadabl
 const KNOWN_PACKAGE_ROOT_PATHS = new Set([
   "package.json",
   "openclaw.plugin.json",
-  "openclaw.bundle.json",
+  ".codex-plugin/plugin.json",
+  ".claude-plugin/plugin.json",
+  ".cursor-plugin/plugin.json",
   "README.md",
   "readme.md",
   "README.mdx",

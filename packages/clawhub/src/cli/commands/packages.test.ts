@@ -1450,11 +1450,12 @@ describe("package commands", () => {
     }
   });
 
-  it("publishes a bundle plugin package with manifest-driven family detection", async () => {
+  it("publishes a bundle plugin package with real bundle marker detection", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "demo-bundle");
       await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(folder, ".codex-plugin"), { recursive: true });
       await writeFile(
         join(folder, "package.json"),
         JSON.stringify({
@@ -1465,8 +1466,13 @@ describe("package commands", () => {
         "utf8",
       );
       await writeFile(
-        join(folder, "openclaw.bundle.json"),
-        JSON.stringify({ id: "demo.bundle", hostTargets: ["desktop", "mobile"] }),
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.bundle" }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, ".codex-plugin", "plugin.json"),
+        JSON.stringify({ name: "Demo Bundle", skills: ["skills"] }),
         "utf8",
       );
       await writeFile(join(folder, "dist", "plugin.wasm"), "binary", "utf8");
@@ -1495,8 +1501,9 @@ describe("package commands", () => {
         },
       });
       expect(getUploadedFileNames()).toEqual([
+        ".codex-plugin/plugin.json",
         "dist/plugin.wasm",
-        "openclaw.bundle.json",
+        "openclaw.plugin.json",
         "package.json",
       ]);
     } finally {
@@ -1637,7 +1644,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects bundle-plugin publish when host targets cannot be resolved", async () => {
+  it("rejects bundle-plugin publish when openclaw.plugin.json is missing", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "demo-bundle");
@@ -1650,7 +1657,7 @@ describe("package commands", () => {
 
       await expect(
         cmdPublishPackage(makeOpts(workdir), "demo-bundle", { family: "bundle-plugin" }),
-      ).rejects.toThrow("Bundle plugins need openclaw.bundle.json or --host-targets");
+      ).rejects.toThrow("openclaw.plugin.json required");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });

@@ -78,6 +78,11 @@ const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
+const REAL_BUNDLE_MANIFESTS = [
+  { path: ".codex-plugin/plugin.json", format: "codex" },
+  { path: ".claude-plugin/plugin.json", format: "claude" },
+  { path: ".cursor-plugin/plugin.json", format: "cursor" },
+] as const;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const packageOfficialMigrationPhaseValidator = v.union(
   v.literal("planned"),
@@ -3393,11 +3398,16 @@ async function publishPackageImpl(
     files,
     (path) => path === "openclaw.plugin.json",
   );
-  const bundleManifestEntry = await readOptionalTextFile(
-    ctx,
-    files,
-    (path) => path === "openclaw.bundle.json",
-  );
+  let detectedBundleFormat: string | undefined;
+  let bundleManifestEntry: Awaited<ReturnType<typeof readOptionalTextFile>> | undefined;
+  for (const marker of REAL_BUNDLE_MANIFESTS) {
+    const entry = await readOptionalTextFile(ctx, files, (path) => path === marker.path);
+    if (entry) {
+      bundleManifestEntry = entry;
+      detectedBundleFormat = marker.format;
+      break;
+    }
+  }
   const readmeEntry = await readOptionalTextFile(
     ctx,
     files,
@@ -3410,6 +3420,9 @@ async function publishPackageImpl(
   const storedPluginManifest = toConvexSafeJsonValue(pluginManifest);
   const storedBundleManifest = toConvexSafeJsonValue(bundleManifest);
   if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
+  if (!pluginManifest) {
+    throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+  }
   if (payload.artifact?.kind === "npm-pack") {
     if (!packageJson) throw new ConvexError("ClawPack must contain package.json");
     const declaredVersion =
@@ -3424,8 +3437,15 @@ async function publishPackageImpl(
       ? extractBundlePluginArtifacts({
           packageName: name,
           packageJson,
+          pluginManifest,
           bundleManifest,
-          bundleMetadata: payload.bundle,
+          bundleMetadata:
+            payload.bundle || detectedBundleFormat
+              ? {
+                  ...payload.bundle,
+                  format: payload.bundle?.format ?? detectedBundleFormat,
+                }
+              : undefined,
           source: effectiveSource,
         })
       : null;
@@ -3439,11 +3459,7 @@ async function publishPackageImpl(
             (() => {
               throw new ConvexError("package.json is required for code plugins");
             })(),
-          pluginManifest:
-            pluginManifest ??
-            (() => {
-              throw new ConvexError("openclaw.plugin.json is required for code plugins");
-            })(),
+          pluginManifest,
           source: effectiveSource,
         })
       : null;

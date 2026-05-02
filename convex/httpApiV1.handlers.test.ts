@@ -5020,7 +5020,13 @@ describe("httpApiV1 handlers", () => {
           bundle: { hostTargets: ["desktop"] },
           files: [
             {
-              path: "openclaw.bundle.json",
+              path: "openclaw.plugin.json",
+              size: 2,
+              storageId: "storage:1",
+              sha256: "a".repeat(64),
+            },
+            {
+              path: ".codex-plugin/plugin.json",
               size: 2,
               storageId: "storage:1",
               sha256: "a".repeat(64),
@@ -5068,7 +5074,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     form.append("files", new File(["{}"], ".DS_Store", { type: "application/octet-stream" }));
-    form.append("files", new File(["{}"], "openclaw.bundle.json", { type: "application/json" }));
+    form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
@@ -5092,7 +5098,7 @@ describe("httpApiV1 handlers", () => {
         payload: expect.objectContaining({
           files: [
             expect.objectContaining({
-              path: "openclaw.bundle.json",
+              path: "openclaw.plugin.json",
             }),
           ],
         }),
@@ -5127,7 +5133,13 @@ describe("httpApiV1 handlers", () => {
           bundle: { hostTargets: ["desktop"] },
           files: [
             {
-              path: "openclaw.bundle.json",
+              path: "openclaw.plugin.json",
+              size: 2,
+              storageId: "storage:1",
+              sha256: "a".repeat(64),
+            },
+            {
+              path: ".codex-plugin/plugin.json",
               size: 2,
               storageId: "storage:1",
               sha256: "a".repeat(64),

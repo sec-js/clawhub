@@ -326,15 +326,21 @@ describe("plugins publish route", () => {
       "demo-bundle/package.json",
     );
     const manifest = withRelativePath(
-      new File(['{"id":"demo.bundle"}'], "openclaw.bundle.json", { type: "application/json" }),
-      "demo-bundle/openclaw.bundle.json",
+      new File(['{"id":"demo.bundle"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-bundle/openclaw.plugin.json",
+    );
+    const bundleMarker = withRelativePath(
+      new File(['{"name":"Demo Bundle"}'], "plugin.json", { type: "application/json" }),
+      "demo-bundle/.codex-plugin/plugin.json",
     );
     const binary = withRelativePath(
       new File([new Uint8Array([1, 2, 3])], "plugin.wasm", { type: "application/wasm" }),
       "demo-bundle/dist/plugin.wasm",
     );
 
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, binary] } });
+    fireEvent.change(getFileInput(), {
+      target: { files: [packageJson, manifest, bundleMarker, binary] },
+    });
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("demo-bundle")).toBeTruthy();
@@ -357,7 +363,7 @@ describe("plugins publish route", () => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
     });
 
-    expect(generateUploadUrl).toHaveBeenCalledTimes(3);
+    expect(generateUploadUrl).toHaveBeenCalledTimes(4);
     expect(publishRelease).toHaveBeenCalledWith({
       payload: expect.objectContaining({
         name: "demo-bundle",
@@ -371,7 +377,8 @@ describe("plugins publish route", () => {
         },
         files: expect.arrayContaining([
           expect.objectContaining({ path: "package.json" }),
-          expect.objectContaining({ path: "openclaw.bundle.json" }),
+          expect.objectContaining({ path: "openclaw.plugin.json" }),
+          expect.objectContaining({ path: ".codex-plugin/plugin.json" }),
           expect.objectContaining({ path: "dist/plugin.wasm" }),
         ]),
       }),

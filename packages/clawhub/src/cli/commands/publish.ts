@@ -102,18 +102,20 @@ export async function cmdPublish(
 async function looksLikePluginFolder(folder: string) {
   const checks = [
     join(folder, "openclaw.plugin.json"),
-    join(folder, "openclaw.bundle.json"),
     join(folder, "package.json"),
+    join(folder, ".codex-plugin", "plugin.json"),
+    join(folder, ".claude-plugin", "plugin.json"),
+    join(folder, ".cursor-plugin", "plugin.json"),
   ];
   const stats = await Promise.all(checks.map((candidate) => stat(candidate).catch(() => null)));
-  if (stats[0]?.isFile() || stats[1]?.isFile()) {
+  if (stats[0]?.isFile() || stats[2]?.isFile() || stats[3]?.isFile() || stats[4]?.isFile()) {
     return true;
   }
-  if (!stats[2]?.isFile()) {
+  if (!stats[1]?.isFile()) {
     return false;
   }
   try {
-    const raw = JSON.parse(await readFile(checks[2], "utf8")) as { openclaw?: unknown };
+    const raw = JSON.parse(await readFile(checks[1], "utf8")) as { openclaw?: unknown };
     return Boolean(
       raw && typeof raw === "object" && raw.openclaw && typeof raw.openclaw === "object",
     );
