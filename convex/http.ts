@@ -21,6 +21,7 @@ import {
   listSkillsV1Http,
   listSoulsV1Http,
   mintPublishTokenV1Http,
+  npmMirrorGetHttp,
   packagesDeleteRouterV1Http,
   packagesGetRouterV1Http,
   packagesPostRouterV1Http,
@@ -107,6 +108,12 @@ http.route({
   pathPrefix: `${ApiRoutes.packages}/`,
   method: "GET",
   handler: packagesGetRouterV1Http,
+});
+
+http.route({
+  pathPrefix: "/api/npm/",
+  method: "GET",
+  handler: npmMirrorGetHttp,
 });
 
 http.route({

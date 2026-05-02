@@ -5,6 +5,7 @@ import {
   listPackagesV1Handler,
   listPluginsV1Handler,
   mintPublishTokenV1Handler,
+  npmMirrorGetHandler,
   packagesDeleteRouterV1Handler,
   packagesGetRouterV1Handler,
   packagesPostRouterV1Handler,
@@ -40,6 +41,7 @@ export const packagesDeleteRouterV1Http = httpAction(packagesDeleteRouterV1Handl
 export const pluginsGetRouterV1Http = httpAction(pluginsGetRouterV1Handler);
 export const publishPackageV1Http = httpAction(publishPackageV1Handler);
 export const mintPublishTokenV1Http = httpAction(mintPublishTokenV1Handler);
+export const npmMirrorGetHttp = httpAction(npmMirrorGetHandler);
 export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 
@@ -74,6 +76,7 @@ export const __handlers = {
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
   mintPublishTokenV1Handler,
+  npmMirrorGetHandler,
   listCodePluginsV1Handler,
   listBundlePluginsV1Handler,
   searchSkillsV1Handler,

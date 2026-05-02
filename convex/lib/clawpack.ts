@@ -133,6 +133,10 @@ export async function sha256Hex(bytes: Uint8Array) {
   return toHex(await digestBytes("SHA-256", bytes));
 }
 
+export async function sha256Base64(bytes: Uint8Array) {
+  return toBase64(await digestBytes("SHA-256", bytes));
+}
+
 export async function parseClawPack(bytes: Uint8Array): Promise<ParsedClawPack> {
   const [sha256, sha1, sha512] = await Promise.all([
     digestBytes("SHA-256", bytes),

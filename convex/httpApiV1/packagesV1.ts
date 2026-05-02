@@ -9,13 +9,13 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
+import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { parseClawPack, sha256Hex } from "../lib/clawpack";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
@@ -158,6 +158,7 @@ type ReleaseLike = {
   compatibility?: Doc<"packageReleases">["compatibility"];
   capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
+  extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
@@ -231,6 +232,76 @@ function toReleaseArtifact(release: ReleaseLike) {
     sha256: release.integritySha256 ?? release.sha256hash,
     format: "zip",
   };
+}
+
+function encodePackagePath(name: string) {
+  return name.split("/").map(encodeURIComponent).join("/");
+}
+
+function absoluteApiUrl(request: Request, path: string) {
+  return new URL(path, request.url).toString();
+}
+
+function releaseArtifactUrls(request: Request, packageName: string, release: ReleaseLike) {
+  const packagePath = encodePackagePath(packageName);
+  const version = encodeURIComponent(release.version);
+  const legacyDownloadUrl = absoluteApiUrl(
+    request,
+    `/api/v1/packages/${packagePath}/download?version=${version}`,
+  );
+  if (release.artifactKind !== "npm-pack") {
+    return {
+      downloadUrl: legacyDownloadUrl,
+      legacyDownloadUrl,
+    };
+  }
+  const tarball = encodeURIComponent(
+    release.npmTarballName ??
+      `${packageName.replace(/^@/, "").replace("/", "-")}-${release.version}.tgz`,
+  );
+  const tarballUrl = absoluteApiUrl(request, `/api/npm/${packagePath}/-/${tarball}`);
+  return {
+    downloadUrl: tarballUrl,
+    tarballUrl,
+    legacyDownloadUrl,
+  };
+}
+
+async function streamClawPackRelease(
+  ctx: ActionCtx,
+  rateHeaders: HeadersInit,
+  pkg: PublicPackageDocLike,
+  release: ReleaseLike,
+) {
+  const securityBlock = getReleaseSecurityBlock(release);
+  if (securityBlock) return text(securityBlock.message, securityBlock.status, rateHeaders);
+  if (release.artifactKind !== "npm-pack" || !release.clawpackStorageId) {
+    return text("ClawPack artifact not found", 404, rateHeaders);
+  }
+  const blob = await ctx.storage.get(release.clawpackStorageId);
+  if (!blob) return text("ClawPack artifact not found", 404, rateHeaders);
+  try {
+    await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
+      packageId: pkg._id,
+    });
+  } catch {
+    // Best-effort metric path; never fail package downloads.
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/octet-stream",
+    "Content-Disposition": `attachment; filename="${release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`}"`,
+    "X-ClawHub-Artifact-Type": "npm-pack-tarball",
+  };
+  if (release.clawpackSha256) {
+    headers.ETag = `"sha256:${release.clawpackSha256}"`;
+    headers["X-ClawHub-Artifact-Sha256"] = release.clawpackSha256;
+  }
+  if (release.npmIntegrity) headers["X-ClawHub-Npm-Integrity"] = release.npmIntegrity;
+  if (release.npmShasum) headers["X-ClawHub-Npm-Shasum"] = release.npmShasum;
+  return new Response(blob, {
+    status: 200,
+    headers: mergeHeaders(rateHeaders, headers, corsHeaders()),
+  });
 }
 
 async function resolvePackageTags(
@@ -1541,7 +1612,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return await searchPackages(ctx, request, { includeSkills: true });
   }
 
-  const rateKind = segments[1] === "download" ? "download" : "read";
+  const rateKind =
+    segments[1] === "download" || segments[3] === "artifact" || segments[4] === "download"
+      ? "download"
+      : "read";
   const rate = await applyRateLimit(ctx, request, rateKind);
   if (!rate.ok) return rate.response;
 
@@ -1655,6 +1729,51 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           distTags: release.distTags ?? [],
         })),
         nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
+  }
+
+  if (segments[1] === "versions" && segments[2] && segments[3] === "artifact") {
+    if (skillDetail?.skill) return text("Artifact not found", 404, rate.headers);
+    const result = (await runQueryRef(
+      ctx,
+      internalRefs.packages.getVersionByNameForViewerInternal,
+      {
+        name: packageName,
+        version: segments[2],
+        viewerUserId: viewerUserId ?? undefined,
+      },
+    )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
+    const release = result?.version ?? null;
+    if (!release) return text("Version not found", 404, rate.headers);
+    if (segments[4] === "download") {
+      if (release.artifactKind === "npm-pack") {
+        return await streamClawPackRelease(ctx, rate.headers, publicPackage!, release);
+      }
+      const url = new URL(
+        `/api/v1/packages/${encodePackagePath(publicPackage!.name)}/download`,
+        request.url,
+      );
+      url.searchParams.set("version", release.version);
+      return new Response(null, {
+        status: 307,
+        headers: mergeHeaders(rate.headers, { Location: url.toString() }, corsHeaders()),
+      });
+    }
+    return json(
+      {
+        package: {
+          name: publicPackage!.name,
+          displayName: publicPackage!.displayName,
+          family: publicPackage!.family,
+        },
+        version: release.version,
+        artifact: {
+          ...toReleaseArtifact(release),
+          ...releaseArtifactUrls(request, publicPackage!.name, release),
+        },
       },
       200,
       rate.headers,
@@ -1820,6 +1939,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       });
     }
     const zip = buildDeterministicPackageZip(entries);
+    const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
       await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
         packageId: publicPackage!._id,
@@ -1834,6 +1954,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         {
           "Content-Type": "application/zip",
           "Content-Disposition": `attachment; filename="${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip"`,
+          ETag: `"sha256:${zipSha256}"`,
+          Digest: `sha-256=${zipSha256Base64}`,
+          "X-ClawHub-Artifact-Type": "legacy-plugin-zip",
+          "X-ClawHub-Artifact-Sha256": zipSha256,
         },
         corsHeaders(),
       ),
@@ -1841,6 +1965,135 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   return text("Not found", 404, rate.headers);
+}
+
+function parseNpmMirrorPath(request: Request) {
+  const segments = getPathSegments(request, "/api/npm/");
+  if (segments.length === 0) return null;
+  if (segments[0]?.startsWith("@")) {
+    if (segments.length < 2) return null;
+    return {
+      packageName: `${segments[0]}/${segments[1]}`,
+      rest: segments.slice(2),
+    };
+  }
+  return {
+    packageName: segments[0]!,
+    rest: segments.slice(1),
+  };
+}
+
+type NpmPackReleasePage = {
+  page: ReleaseLike[];
+  isDone: boolean;
+  continueCursor: string | null;
+};
+
+async function listNpmPackReleases(
+  ctx: ActionCtx,
+  packageName: string,
+  viewerUserId: Id<"users"> | null,
+) {
+  const releases: ReleaseLike[] = [];
+  let cursor: string | null = null;
+  let done = false;
+  let pages = 0;
+  while (!done && pages < 20) {
+    pages += 1;
+    const result: NpmPackReleasePage = await runQueryRef(
+      ctx,
+      internalRefs.packages.listVersionsForViewerInternal,
+      {
+        name: packageName,
+        viewerUserId: viewerUserId ?? undefined,
+        paginationOpts: { cursor, numItems: 100 },
+      },
+    );
+    releases.push(
+      ...result.page.filter(
+        (release: ReleaseLike) =>
+          release.artifactKind === "npm-pack" &&
+          Boolean(release.clawpackStorageId) &&
+          Boolean(release.npmIntegrity) &&
+          Boolean(release.npmShasum),
+      ),
+    );
+    done = result.isDone;
+    cursor = result.continueCursor;
+    if (!cursor && !done) break;
+  }
+  return releases;
+}
+
+function packageJsonDependencies(packageJson: unknown) {
+  if (!packageJson || typeof packageJson !== "object" || Array.isArray(packageJson)) return {};
+  const dependencies = (packageJson as { dependencies?: unknown }).dependencies;
+  if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) return {};
+  return Object.fromEntries(
+    Object.entries(dependencies as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
+export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
+  const path = parseNpmMirrorPath(request);
+  if (!path) return text("Not found", 404);
+  const isTarballRequest = path.rest[0] === "-" && Boolean(path.rest[1]);
+  const rate = await applyRateLimit(ctx, request, isTarballRequest ? "download" : "read");
+  if (!rate.ok) return rate.response;
+
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+  const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
+    name: path.packageName,
+    viewerUserId: viewerUserId ?? undefined,
+  })) as {
+    package: PublicPackageDocLike | null;
+    latestRelease: ReleaseLike | null;
+    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+  } | null;
+  if (!detail?.package) return text("Package not found", 404, rate.headers);
+
+  const releases = await listNpmPackReleases(ctx, path.packageName, viewerUserId);
+  if (isTarballRequest) {
+    const tarballName = path.rest[1]!;
+    const release = releases.find((candidate) => candidate.npmTarballName === tarballName);
+    if (!release) return text("ClawPack artifact not found", 404, rate.headers);
+    return await streamClawPackRelease(ctx, rate.headers, detail.package, release);
+  }
+  if (path.rest.length > 0) return text("Not found", 404, rate.headers);
+
+  const versions = Object.fromEntries(
+    releases.map((release) => {
+      const artifact = toReleaseArtifact(release);
+      const urls = releaseArtifactUrls(request, detail.package!.name, release);
+      return [
+        release.version,
+        {
+          name: detail.package!.name,
+          version: release.version,
+          description: detail.package!.summary ?? undefined,
+          dependencies: packageJsonDependencies(release.extractedPackageJson),
+          dist: {
+            tarball: urls.tarballUrl,
+            integrity: artifact.npmIntegrity,
+            shasum: artifact.npmShasum,
+          },
+        },
+      ];
+    }),
+  );
+  const latestNpmRelease =
+    releases.find((release) => release.distTags?.includes("latest")) ?? releases[0] ?? null;
+  return json(
+    {
+      name: detail.package.name,
+      "dist-tags": latestNpmRelease ? { latest: latestNpmRelease.version } : {},
+      versions,
+    },
+    200,
+    rate.headers,
+  );
 }
 
 export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request) {

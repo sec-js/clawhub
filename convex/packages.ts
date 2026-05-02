@@ -2177,7 +2177,8 @@ async function publishPackageImpl(
   if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
   if (payload.artifact?.kind === "npm-pack") {
     if (!packageJson) throw new ConvexError("ClawPack must contain package.json");
-    const declaredVersion = typeof packageJson.version === "string" ? packageJson.version.trim() : "";
+    const declaredVersion =
+      typeof packageJson.version === "string" ? packageJson.version.trim() : "";
     if (declaredVersion !== version) {
       throw new ConvexError(`ClawPack package.json version must match ${version}`);
     }
