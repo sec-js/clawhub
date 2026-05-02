@@ -381,7 +381,12 @@ function toReleaseArtifact(release: ReleaseLike) {
 }
 
 function encodePackagePath(name: string) {
-  return name.split("/").map(encodeURIComponent).join("/");
+  return name
+    .split("/")
+    .map((segment) =>
+      segment.startsWith("@") ? `@${encodeURIComponent(segment.slice(1))}` : encodeURIComponent(segment),
+    )
+    .join("/");
 }
 
 function absoluteApiUrl(request: Request, path: string) {
@@ -2503,6 +2508,14 @@ function parseNpmMirrorPath(request: Request) {
   const segments = getPathSegments(request, "/api/npm/");
   if (segments.length === 0) return null;
   if (segments[0]?.startsWith("@")) {
+    if (segments[0].includes("/")) {
+      const [scope, name] = segments[0].split("/");
+      if (!scope || !name) return null;
+      return {
+        packageName: `${scope}/${name}`,
+        rest: segments.slice(1),
+      };
+    }
     if (segments.length < 2) return null;
     return {
       packageName: `${segments[0]}/${segments[1]}`,

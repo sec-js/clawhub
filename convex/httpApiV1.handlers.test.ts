@@ -4410,6 +4410,75 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("npm mirror accepts encoded scoped package packument paths", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("paginationOpts" in args)) {
+        expect(args.name).toBe("@scope/demo-plugin");
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            summary: "Demo package",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("paginationOpts" in args) {
+        expect(args.name).toBe("@scope/demo-plugin");
+        return {
+          page: [
+            {
+              _id: "packageReleases:1",
+              packageId: "packages:demo-plugin",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Initial release",
+              distTags: ["latest"],
+              files: [],
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "d".repeat(40),
+              npmTarballName: "scope-demo-plugin-1.0.0.tgz",
+            },
+          ],
+          isDone: true,
+          continueCursor: null,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.npmMirrorGetHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/npm/@scope%2Fdemo-plugin"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      name: "@scope/demo-plugin",
+      "dist-tags": { latest: "1.0.0" },
+      versions: {
+        "1.0.0": {
+          dist: {
+            tarball:
+              "https://example.com/api/npm/@scope/demo-plugin/-/scope-demo-plugin-1.0.0.tgz",
+          },
+        },
+      },
+    });
+  });
+
   it("treats /packages/search without q as a package detail route", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
