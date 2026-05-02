@@ -270,6 +270,30 @@ export const ApiV1PackageVersionResponseSchema = type({
   }).or("null"),
 });
 
+export const ApiV1PackageArtifactResponseSchema = type({
+  package: type({
+    name: "string",
+    displayName: "string",
+    family: PackageFamilySchema,
+  }),
+  version: "string",
+  artifact: type({
+    kind: PackageArtifactKindSchema,
+    sha256: "string?",
+    size: "number?",
+    format: "string?",
+    npmIntegrity: "string?",
+    npmShasum: "string?",
+    npmTarballName: "string?",
+    npmUnpackedSize: "number?",
+    npmFileCount: "number?",
+    downloadUrl: "string",
+    tarballUrl: "string?",
+    legacyDownloadUrl: "string?",
+  }),
+});
+export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
+
 export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",

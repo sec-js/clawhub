@@ -1,7 +1,8 @@
 /* @vitest-environment node */
 
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, zipSync } from "fflate";
@@ -28,11 +29,13 @@ vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdDeletePackageTrustedPublisher,
+  cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
+  cmdVerifyPackage,
 } = await import("./packages");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -155,6 +158,14 @@ function npmPackFixture(files: Record<string, string>) {
   return gzipSync(tar);
 }
 
+function artifactIdentity(bytes: Uint8Array) {
+  return {
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    npmIntegrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}`,
+    npmShasum: createHash("sha1").update(bytes).digest("hex"),
+  };
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   mockLog.mockClear();
@@ -263,6 +274,160 @@ describe("package commands", () => {
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("tag")).toBe("latest");
     expect(url.searchParams.get("version")).toBeNull();
+  });
+
+  it("downloads a ClawPack artifact through the explicit artifact resolver", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const bytes = npmPackFixture({
+        "package/package.json": JSON.stringify({
+          name: "@scope/demo",
+          version: "1.2.3",
+        }),
+        "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      });
+      const identity = artifactIdentity(bytes);
+      await mkdir(join(workdir, "downloads"), { recursive: true });
+      httpMocks.apiRequest
+        .mockResolvedValueOnce({
+          package: {
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+            runtimeId: "demo.plugin",
+            channel: "community",
+            isOfficial: false,
+            summary: null,
+            latestVersion: "1.2.3",
+            createdAt: 1,
+            updatedAt: 2,
+            tags: { latest: "1.2.3" },
+          },
+          owner: null,
+        })
+        .mockResolvedValueOnce({
+          package: {
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+          },
+          version: "1.2.3",
+          artifact: {
+            kind: "npm-pack",
+            sha256: identity.sha256,
+            size: bytes.byteLength,
+            format: "tgz",
+            npmIntegrity: identity.npmIntegrity,
+            npmShasum: identity.npmShasum,
+            npmTarballName: "demo-1.2.3.tgz",
+            downloadUrl: "https://clawhub.ai/api/npm/@scope/demo/-/demo-1.2.3.tgz",
+            tarballUrl: "https://clawhub.ai/api/npm/@scope/demo/-/demo-1.2.3.tgz",
+            legacyDownloadUrl:
+              "https://clawhub.ai/api/v1/packages/@scope/demo/download?version=1.2.3",
+          },
+        });
+      httpMocks.fetchBinary.mockResolvedValue(bytes);
+
+      await cmdDownloadPackage(makeOpts(workdir), "@scope/demo", {
+        tag: "latest",
+        output: "downloads",
+      });
+
+      expect(httpMocks.apiRequest.mock.calls[1]?.[1]).toMatchObject({
+        method: "GET",
+        path: "/api/v1/packages/%40scope%2Fdemo/versions/1.2.3/artifact",
+      });
+      expect(httpMocks.fetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+        url: "https://clawhub.ai/api/npm/@scope/demo/-/demo-1.2.3.tgz",
+        token: undefined,
+      });
+      expect(await readFile(join(workdir, "downloads", "demo-1.2.3.tgz"))).toEqual(
+        Buffer.from(bytes),
+      );
+      expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Downloaded @scope/demo@1.2.3"));
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies a local ClawPack against resolved artifact metadata", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const bytes = npmPackFixture({
+        "package/package.json": JSON.stringify({
+          name: "@scope/demo",
+          version: "1.2.3",
+        }),
+        "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      });
+      const identity = artifactIdentity(bytes);
+      await writeFile(join(workdir, "demo-1.2.3.tgz"), bytes);
+      httpMocks.apiRequest
+        .mockResolvedValueOnce({
+          package: {
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+            runtimeId: "demo.plugin",
+            channel: "community",
+            isOfficial: false,
+            summary: null,
+            latestVersion: "1.2.3",
+            createdAt: 1,
+            updatedAt: 2,
+            tags: { latest: "1.2.3" },
+          },
+          owner: null,
+        })
+        .mockResolvedValueOnce({
+          package: {
+            name: "@scope/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+          },
+          version: "1.2.3",
+          artifact: {
+            kind: "npm-pack",
+            sha256: identity.sha256,
+            format: "tgz",
+            npmIntegrity: identity.npmIntegrity,
+            npmShasum: identity.npmShasum,
+            npmTarballName: "demo-1.2.3.tgz",
+            downloadUrl: "https://clawhub.ai/api/npm/@scope/demo/-/demo-1.2.3.tgz",
+          },
+        });
+
+      await cmdVerifyPackage(makeOpts(workdir), "demo-1.2.3.tgz", {
+        packageName: "@scope/demo",
+        tag: "latest",
+      });
+
+      expect(mockLog).toHaveBeenCalledWith("OK. Artifact verification passed.");
+      expect(uiMocks.spinner.fail).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails package artifact verification on digest mismatch", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const bytes = npmPackFixture({
+        "package/package.json": JSON.stringify({
+          name: "@scope/demo",
+          version: "1.2.3",
+        }),
+      });
+      await writeFile(join(workdir, "demo-1.2.3.tgz"), bytes);
+
+      await expect(
+        cmdVerifyPackage(makeOpts(workdir), "demo-1.2.3.tgz", {
+          sha256: "bad",
+        }),
+      ).rejects.toThrow("SHA-256 mismatch");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

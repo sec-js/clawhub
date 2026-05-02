@@ -16,12 +16,14 @@ import { cmdInspect } from "./cli/commands/inspect.js";
 import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./cli/commands/moderation.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
+  cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdDeletePackageTrustedPublisher,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
+  cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
@@ -397,6 +399,39 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdInspectPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("download")
+  .description("Download a package artifact and verify its published digests")
+  .argument("<name>", "Package name")
+  .option("--version <version>", "Version to download")
+  .option("--tag <tag>", "Tag to download (default: latest)")
+  .option("-o, --output <path>", "Output file or directory")
+  .option("--force", "Overwrite existing output file")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDownloadPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("verify")
+  .description("Verify a local package artifact against ClawHub or expected digests")
+  .argument("<file>", "Artifact file")
+  .option("--package <name>", "Package name to resolve expected artifact metadata")
+  .option("--version <version>", "Package version to resolve")
+  .option("--tag <tag>", "Package tag to resolve")
+  .option("--sha256 <hex>", "Expected ClawHub SHA-256")
+  .option("--npm-integrity <sri>", "Expected npm sha512 integrity")
+  .option("--npm-shasum <sha1>", "Expected npm shasum")
+  .option("--json", "Output JSON")
+  .action(async (file, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdVerifyPackage(opts, file, {
+      ...options,
+      packageName: options.package,
+    });
   });
 
 packageCmd

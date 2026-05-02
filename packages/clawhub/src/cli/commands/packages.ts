@@ -1,12 +1,14 @@
-import { readFile, readdir, stat } from "node:fs/promises";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
-import { apiRequest, apiRequestForm, fetchText, registryUrl } from "../../http.js";
+import { apiRequest, apiRequestForm, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
+  ApiV1PackageArtifactResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackagePublishResponseSchema,
   ApiV1PackageResponseSchema,
@@ -75,6 +77,24 @@ type PackagePublishOptions = {
   sourceRef?: string;
   sourcePath?: string;
   dryRun?: boolean;
+  json?: boolean;
+};
+
+type PackageDownloadOptions = {
+  version?: string;
+  tag?: string;
+  output?: string;
+  force?: boolean;
+  json?: boolean;
+};
+
+type PackageVerifyOptions = {
+  packageName?: string;
+  version?: string;
+  tag?: string;
+  sha256?: string;
+  npmIntegrity?: string;
+  npmShasum?: string;
   json?: boolean;
 };
 
@@ -154,6 +174,13 @@ type PrintableFile = {
 
 type PackageResponse = Awaited<ReturnType<typeof apiRequestPackageDetail>>;
 type PackageVersionResponse = Awaited<ReturnType<typeof apiRequestPackageVersion>>;
+type PackageArtifactResponse = Awaited<ReturnType<typeof apiRequestPackageArtifact>>;
+type ArtifactIdentity = {
+  sha256: string;
+  npmIntegrity: string;
+  npmShasum: string;
+  byteLength: number;
+};
 
 export async function cmdExplorePackages(
   opts: GlobalOpts,
@@ -549,11 +576,163 @@ export async function cmdPublishPackage(
   }
 }
 
+export async function cmdDownloadPackage(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageDownloadOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  if (options.version && options.tag) fail("Use either --version or --tag");
+
+  const token = await getOptionalAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner("Resolving package artifact");
+  try {
+    const targetVersion = await resolvePackageVersion(registry, trimmed, {
+      token,
+      version: options.version,
+      tag: options.tag,
+    });
+    spinnerText(spinner, `Resolving ${trimmed}@${targetVersion}`);
+    const artifactResult = await apiRequestPackageArtifact(registry, trimmed, targetVersion, token);
+    spinnerText(spinner, `Downloading ${trimmed}@${targetVersion}`);
+    const bytes = await fetchBinary(registry, {
+      url: artifactResult.artifact.downloadUrl,
+      token,
+    });
+    const identity = computeArtifactIdentity(bytes);
+    validateDownloadedArtifact(trimmed, artifactResult, bytes, identity);
+
+    const filename = defaultArtifactFilename(trimmed, targetVersion, artifactResult.artifact);
+    const outputPath = await resolveArtifactOutputPath(opts, options.output, filename);
+    await assertOutputWritable(outputPath, Boolean(options.force));
+    await writeFile(outputPath, bytes);
+    spinner?.stop();
+
+    const output = {
+      package: artifactResult.package.name,
+      version: targetVersion,
+      artifact: artifactResult.artifact,
+      path: outputPath,
+      bytes: bytes.byteLength,
+      sha256: identity.sha256,
+      npmIntegrity: artifactResult.artifact.kind === "npm-pack" ? identity.npmIntegrity : undefined,
+      npmShasum: artifactResult.artifact.kind === "npm-pack" ? identity.npmShasum : undefined,
+    };
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+      return;
+    }
+    console.log(`Downloaded ${artifactResult.package.name}@${targetVersion} -> ${outputPath}`);
+    console.log(`Artifact: ${artifactResult.artifact.kind}`);
+    console.log(`SHA-256: ${identity.sha256}`);
+    if (artifactResult.artifact.kind === "npm-pack") {
+      console.log(`npm integrity: ${identity.npmIntegrity}`);
+      console.log(`npm shasum: ${identity.npmShasum}`);
+    }
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdVerifyPackage(
+  opts: GlobalOpts,
+  filePath: string,
+  options: PackageVerifyOptions = {},
+) {
+  const targetFile = resolve(opts.workdir, filePath);
+  if (options.version && options.tag) fail("Use either --version or --tag");
+  if ((options.version || options.tag) && !options.packageName?.trim()) {
+    fail("--package is required with --version or --tag");
+  }
+
+  const spinner = options.json ? null : createSpinner("Reading artifact");
+  try {
+    const bytes = new Uint8Array(await readFile(targetFile));
+    const identity = computeArtifactIdentity(bytes);
+    let artifactResult: PackageArtifactResponse | null = null;
+
+    if (options.packageName?.trim()) {
+      const packageName = normalizePackageNameOrFail(options.packageName);
+      const token = await getOptionalAuthToken();
+      const registry = await getRegistry(opts, { cache: true });
+      spinnerText(spinner, `Resolving ${packageName}`);
+      const targetVersion = await resolvePackageVersion(registry, packageName, {
+        token,
+        version: options.version,
+        tag: options.tag,
+      });
+      artifactResult = await apiRequestPackageArtifact(registry, packageName, targetVersion, token);
+      validateDownloadedArtifact(packageName, artifactResult, bytes, identity);
+    }
+
+    const expectedSha256 = options.sha256?.trim() || artifactResult?.artifact.sha256;
+    const expectedNpmIntegrity =
+      options.npmIntegrity?.trim() || artifactResult?.artifact.npmIntegrity;
+    const expectedNpmShasum = options.npmShasum?.trim() || artifactResult?.artifact.npmShasum;
+    assertDigestMatch("SHA-256", expectedSha256, identity.sha256);
+    assertDigestMatch("npm integrity", expectedNpmIntegrity, identity.npmIntegrity);
+    assertDigestMatch("npm shasum", expectedNpmShasum, identity.npmShasum);
+
+    spinner?.stop();
+    const output = {
+      path: targetFile,
+      bytes: bytes.byteLength,
+      sha256: identity.sha256,
+      npmIntegrity: identity.npmIntegrity,
+      npmShasum: identity.npmShasum,
+      expected: {
+        sha256: expectedSha256,
+        npmIntegrity: expectedNpmIntegrity,
+        npmShasum: expectedNpmShasum,
+        package: artifactResult?.package.name,
+        version: artifactResult?.version,
+        artifactKind: artifactResult?.artifact.kind,
+      },
+      verified: Boolean(expectedSha256 || expectedNpmIntegrity || expectedNpmShasum),
+    };
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+      return;
+    }
+    console.log(`Path: ${targetFile}`);
+    console.log(`SHA-256: ${identity.sha256}`);
+    console.log(`npm integrity: ${identity.npmIntegrity}`);
+    console.log(`npm shasum: ${identity.npmShasum}`);
+    if (output.verified) {
+      console.log("OK. Artifact verification passed.");
+    } else {
+      console.log("Computed artifact digests. Pass --package or expected digests to verify.");
+    }
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
 async function apiRequestPackageDetail(registry: string, name: string, token?: string) {
   return await apiRequest(
     registry,
     { method: "GET", path: `${ApiRoutes.packages}/${encodeURIComponent(name)}`, token },
     ApiV1PackageResponseSchema,
+  );
+}
+
+async function apiRequestPackageArtifact(
+  registry: string,
+  name: string,
+  version: string,
+  token?: string,
+) {
+  return await apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/artifact`,
+      token,
+    },
+    ApiV1PackageArtifactResponseSchema,
   );
 }
 
@@ -601,10 +780,33 @@ async function apiRequestPackageVersions(
   );
 }
 
+async function resolvePackageVersion(
+  registry: string,
+  name: string,
+  args: { token?: string; version?: string; tag?: string },
+) {
+  if (args.version?.trim()) return args.version.trim();
+  const detail = await apiRequestPackageDetail(registry, name, args.token);
+  if (!detail.package) fail("Package not found");
+  const tags = normalizeTags(detail.package.tags);
+  if (args.tag?.trim()) {
+    const tagged = tags[args.tag.trim()];
+    if (!tagged) fail(`Unknown tag "${args.tag.trim()}"`);
+    return tagged;
+  }
+  const latest = detail.package.latestVersion ?? tags.latest;
+  if (!latest) fail("Could not resolve latest version");
+  return latest;
+}
+
 function normalizePackageNameOrFail(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) fail("Package name required");
   return trimmed;
+}
+
+function spinnerText(spinner: ReturnType<typeof createSpinner> | null, text: string) {
+  if (spinner) spinner.text = text;
 }
 
 function clampLimit(value: number, max: number) {
@@ -630,6 +832,94 @@ function formatPackageLine(item: {
   const version = item.latestVersion ? ` v${item.latestVersion}` : "";
   const summary = item.summary ? `  ${item.summary}` : "";
   return `${item.name}${version}  ${item.displayName}  [${flags.join(", ")}]${summary}`;
+}
+
+function computeArtifactIdentity(bytes: Uint8Array): ArtifactIdentity {
+  return {
+    sha256: digestHex(bytes, "sha256"),
+    npmIntegrity: `sha512-${digestBase64(bytes, "sha512")}`,
+    npmShasum: digestHex(bytes, "sha1"),
+    byteLength: bytes.byteLength,
+  };
+}
+
+function digestHex(bytes: Uint8Array, algorithm: "sha1" | "sha256") {
+  return createHash(algorithm).update(bytes).digest("hex");
+}
+
+function digestBase64(bytes: Uint8Array, algorithm: "sha512") {
+  return createHash(algorithm).update(bytes).digest("base64");
+}
+
+function validateDownloadedArtifact(
+  requestedPackageName: string,
+  artifactResult: PackageArtifactResponse,
+  bytes: Uint8Array,
+  identity: ArtifactIdentity,
+) {
+  const artifact = artifactResult.artifact;
+  assertDigestMatch("SHA-256", artifact.sha256, identity.sha256);
+  if (typeof artifact.size === "number" && artifact.size !== identity.byteLength) {
+    fail(`artifact size mismatch: expected ${artifact.size}, got ${identity.byteLength}`);
+  }
+  if (artifact.kind === "npm-pack") {
+    assertDigestMatch("npm integrity", artifact.npmIntegrity, identity.npmIntegrity);
+    assertDigestMatch("npm shasum", artifact.npmShasum, identity.npmShasum);
+    const parsed = parseClawPack(bytes);
+    if (parsed.packageName !== artifactResult.package.name) {
+      fail(
+        `ClawPack package name mismatch: expected ${artifactResult.package.name}, got ${parsed.packageName}`,
+      );
+    }
+    if (parsed.packageVersion !== artifactResult.version) {
+      fail(
+        `ClawPack package version mismatch: expected ${artifactResult.version}, got ${parsed.packageVersion}`,
+      );
+    }
+    if (requestedPackageName !== artifactResult.package.name) {
+      fail(
+        `Resolved package mismatch: expected ${requestedPackageName}, got ${artifactResult.package.name}`,
+      );
+    }
+  }
+}
+
+function assertDigestMatch(label: string, expected: string | null | undefined, actual: string) {
+  if (!expected) return;
+  if (expected !== actual) {
+    fail(`${label} mismatch: expected ${expected}, got ${actual}`);
+  }
+}
+
+function defaultArtifactFilename(
+  name: string,
+  version: string,
+  artifact: PackageArtifactResponse["artifact"],
+) {
+  if (artifact.kind === "npm-pack" && artifact.npmTarballName) return artifact.npmTarballName;
+  const safeName = name
+    .replace(/^@/, "")
+    .replaceAll("/", "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "-");
+  return `${safeName}-${version}.${artifact.kind === "npm-pack" ? "tgz" : "zip"}`;
+}
+
+async function resolveArtifactOutputPath(
+  opts: GlobalOpts,
+  output: string | undefined,
+  filename: string,
+) {
+  if (!output?.trim()) return resolve(opts.workdir, filename);
+  const resolved = resolve(opts.workdir, output.trim());
+  const outputStat = await stat(resolved).catch(() => null);
+  if (outputStat?.isDirectory()) return join(resolved, filename);
+  return resolved;
+}
+
+async function assertOutputWritable(path: string, force: boolean) {
+  const existing = await stat(path).catch(() => null);
+  if (existing && !force) fail(`Refusing to overwrite ${path}. Use --force.`);
+  await mkdir(dirname(path), { recursive: true });
 }
 
 function printPackageSummary(detail: PackageResponse) {

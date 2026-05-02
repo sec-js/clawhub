@@ -259,6 +259,51 @@ clawhub package explore episodic-claw --family code-plugin
 - `--file <path>`: fetch raw file content (text files only; 200KB limit).
 - `--json`: machine-readable output.
 
+### `package download <name>`
+
+- Resolves a package version through
+  `GET /api/v1/packages/{name}/versions/{version}/artifact`.
+- Downloads the artifact from the resolver's `downloadUrl`.
+- Verifies ClawHub SHA-256 for all artifacts.
+- For ClawPack npm-pack artifacts, also verifies npm `sha512` integrity,
+  npm shasum, and the tarball's `package.json` name/version.
+- Legacy ZIP versions download through the legacy ZIP route.
+- Flags:
+  - `--version <version>`: download a specific version.
+  - `--tag <tag>`: download a tagged version (default: `latest`).
+  - `-o, --output <path>`: output file or directory.
+  - `--force`: overwrite an existing output file.
+  - `--json`: machine-readable output.
+
+Examples:
+
+```bash
+clawhub package download @openclaw/example-plugin --tag latest
+clawhub package download @openclaw/example-plugin --version 1.2.3 -o artifacts/
+```
+
+### `package verify <file>`
+
+- Computes ClawHub SHA-256, npm `sha512` integrity, and npm shasum for a local
+  artifact.
+- With `--package`, resolves expected metadata from ClawHub and compares the
+  local file against the published artifact metadata.
+- With direct digest flags, verifies without a network lookup.
+- Flags:
+  - `--package <name>`: package name to resolve expected artifact metadata.
+  - `--version <version>` or `--tag <tag>`: expected package version.
+  - `--sha256 <hex>`: expected ClawHub SHA-256.
+  - `--npm-integrity <sri>`: expected npm integrity.
+  - `--npm-shasum <sha1>`: expected npm shasum.
+  - `--json`: machine-readable output.
+
+Examples:
+
+```bash
+clawhub package verify ./example-plugin-1.2.3.tgz --package @openclaw/example-plugin --version 1.2.3
+clawhub package verify ./example-plugin-1.2.3.tgz --sha256 <hex>
+```
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.

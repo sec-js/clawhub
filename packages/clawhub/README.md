@@ -45,6 +45,8 @@ clawhub skill publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
 clawhub package inspect @openclaw/example-plugin
+clawhub package download @openclaw/example-plugin --tag latest
+clawhub package verify ./example-plugin-1.0.0.tgz --package @openclaw/example-plugin --version 1.0.0
 clawhub package publish openclaw/example-plugin
 clawhub package publish openclaw/example-plugin@v1.0.0
 clawhub package publish https://github.com/openclaw/example-plugin --dry-run
@@ -72,6 +74,11 @@ clawhub package publish ./my-plugin --family code-plugin
 
 Folder publish does not run `npm pack` for you. It remains the compatibility
 path for old ZIP-based package downloads.
+
+Use `clawhub package download` to resolve the published artifact through
+ClawHub's explicit artifact route. ClawPack downloads are verified against npm
+integrity/shasum plus ClawHub SHA-256; legacy package versions still download
+as ZIPs.
 
 `code-plugin` packages must declare these `package.json` fields:
 
