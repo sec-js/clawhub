@@ -2957,6 +2957,7 @@ describe("packages public queries", () => {
                 openclaw: {
                   extensions: ["./dist/index.js"],
                   hostTargets: ["darwin-arm64", "linux-x64"],
+                  environment: {},
                   compat: { pluginApi: "^1.0.0" },
                   build: { openclawVersion: "2026.3.14" },
                   configSchema: { type: "object" },

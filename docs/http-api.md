@@ -293,6 +293,13 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `target` / `hostTarget` (optional): shorthand for `host:<target>`
+- `os`, `arch`, `libc` (optional): shorthand for host capability filters
+- `requiresBrowser`, `requiresDesktop`, `requiresNativeDeps`,
+  `requiresExternalService`, `requiresBinary`, `requiresOsPermission`
+  (optional): `true`/`1` shorthand for environment requirement tags
+- `externalService`, `binary`, `osPermission` (optional): shorthand for named
+  environment requirement tags
 
 Notes:
 
@@ -316,6 +323,10 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `target` / `hostTarget`, `os`, `arch`, `libc`, `requiresBrowser`,
+  `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
+  `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
+  `osPermission` are accepted as shorthands for common capability tags
 
 Notes:
 
@@ -600,7 +611,7 @@ Publishes a code-plugin or bundle-plugin release.
 Validation highlights:
 
 - `family` must be `code-plugin` or `bundle-plugin`.
-- Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, config schema metadata, and explicit `openclaw.hostTargets`.
+- Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, config schema metadata, explicit `openclaw.hostTargets`, and explicit `openclaw.environment`.
 - Bundle plugins require at least one host target.
 - Only trusted publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.

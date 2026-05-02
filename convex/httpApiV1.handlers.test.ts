@@ -2790,6 +2790,26 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
   });
 
+  it("packages search maps environment filters to capability tags", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
+      if ("query" in args) return [];
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search?q=test&requiresBrowser=true"),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        capabilityTag: "requires:browser",
+      }),
+    );
+  });
+
   it("packages list supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3659,6 +3679,7 @@ describe("httpApiV1 handlers", () => {
             capabilities: {
               executesCode: true,
               hostTargets: ["darwin-arm64"],
+              capabilityTags: ["environment:declared"],
             },
             verification: {
               tier: "source-linked",
@@ -3696,6 +3717,7 @@ describe("httpApiV1 handlers", () => {
         expect.objectContaining({ id: "official", status: "fail" }),
         expect.objectContaining({ id: "clawpack", status: "fail" }),
         expect.objectContaining({ id: "host-targets", status: "pass" }),
+        expect.objectContaining({ id: "environment", status: "pass" }),
       ]),
     });
   });

@@ -120,6 +120,8 @@ cat > package.json <<'EOF'
   "type": "module",
   "openclaw": {
     "extensions": ["./index.ts"],
+    "hostTargets": ["darwin-arm64"],
+    "environment": {},
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2"
     },
@@ -145,11 +147,15 @@ bun clawhub package publish . --family code-plugin
 
 Notes:
 
-- `openclaw.compat.pluginApi`, `openclaw.build.openclawVersion`, and
-  `openclaw.hostTargets` are required for `code-plugin` publishes.
+- `openclaw.compat.pluginApi`, `openclaw.build.openclawVersion`,
+  `openclaw.hostTargets`, and `openclaw.environment` are required for
+  `code-plugin` publishes.
 - `package.json.version` does not replace either required OpenClaw field.
 - `openclaw.hostTargets` should list concrete host targets such as
   `darwin-arm64`, `linux-x64`, or `win32-x64`.
+- `openclaw.environment` can be `{}` when the plugin has no extra browser,
+  desktop, native dependency, external service, binary, audio, or OS-permission
+  requirements.
 - Add `openclaw.compat.minGatewayVersion` and
   `openclaw.build.pluginSdkVersion` when you want to expose fuller
   compatibility/build metadata, but they are not required for a successful

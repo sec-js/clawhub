@@ -2,6 +2,7 @@ export const OPENCLAW_EXTERNAL_CODE_PLUGIN_REQUIRED_FIELD_PATHS = [
     "openclaw.compat.pluginApi",
     "openclaw.build.openclawVersion",
     "openclaw.hostTargets",
+    "openclaw.environment",
 ];
 function isRecord(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -59,6 +60,9 @@ export function listMissingOpenClawExternalCodePluginFieldPaths(packageJson) {
     }
     if (getTrimmedStringList(openclaw?.hostTargets).length === 0) {
         missing.push("openclaw.hostTargets");
+    }
+    if (!isRecord(openclaw?.environment)) {
+        missing.push("openclaw.environment");
     }
     return missing;
 }

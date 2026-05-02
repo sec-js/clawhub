@@ -100,6 +100,7 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
     openclaw: {
       extensions: ["./dist/index.js"],
       hostTargets: ["darwin-arm64", "linux-x64", "win32-x64"],
+      environment: {},
       compat: {
         pluginApi: ">=2026.3.24-beta.2",
       },
@@ -1145,6 +1146,7 @@ describe("package commands", () => {
             extensions: ["./index.ts"],
             compat: { pluginApi: ">=2026.3.24-beta.2" },
             build: { openclawVersion: "2026.3.24-beta.2" },
+            environment: {},
           },
         }),
         "utf8",

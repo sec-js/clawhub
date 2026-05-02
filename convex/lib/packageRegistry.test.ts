@@ -18,6 +18,14 @@ describe("packageRegistry", () => {
         openclaw: {
           extensions: ["./dist/index.js"],
           hostTargets: ["darwin-arm64", "linux-x64"],
+          environment: {
+            browser: true,
+            desktop: { required: true },
+            nativeDependencies: ["sharp"],
+            externalServices: [{ name: "GitHub" }],
+            osPermissions: ["screen-recording"],
+            binaries: ["ffmpeg"],
+          },
           compat: {
             pluginApi: "^1.2.0",
             minGatewayVersion: "2026.3.0",
@@ -53,8 +61,49 @@ describe("packageRegistry", () => {
     expect(result.capabilities.hostTargets).toEqual(["darwin-arm64", "linux-x64"]);
     expect(result.capabilities.toolNames).toContain("demoTool");
     expect(result.capabilities.capabilityTags).toContain("host:darwin-arm64");
+    expect(result.capabilities.capabilityTags).toContain("host-os:darwin");
+    expect(result.capabilities.capabilityTags).toContain("host-arch:arm64");
+    expect(result.capabilities.capabilityTags).toContain("host-os:linux");
+    expect(result.capabilities.capabilityTags).toContain("host-arch:x64");
+    expect(result.capabilities.capabilityTags).toContain("environment:declared");
+    expect(result.capabilities.capabilityTags).toContain("requires:browser");
+    expect(result.capabilities.capabilityTags).toContain("requires:desktop");
+    expect(result.capabilities.capabilityTags).toContain("requires:native-deps");
+    expect(result.capabilities.capabilityTags).toContain("native-dep:sharp");
+    expect(result.capabilities.capabilityTags).toContain("requires:external-service");
+    expect(result.capabilities.capabilityTags).toContain("external-service:github");
+    expect(result.capabilities.capabilityTags).toContain("os-permission:screen-recording");
+    expect(result.capabilities.capabilityTags).toContain("binary:ffmpeg");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
+  });
+
+  it("requires explicit environment metadata for code plugins", () => {
+    expect(() =>
+      extractCodePluginArtifacts({
+        packageName: "demo-plugin",
+        packageJson: {
+          name: "demo-plugin",
+          openclaw: {
+            extensions: ["./dist/index.js"],
+            hostTargets: ["darwin-arm64"],
+            compat: { pluginApi: "^1.0.0" },
+            build: { openclawVersion: "2026.3.14" },
+            configSchema: { type: "object" },
+          },
+        },
+        pluginManifest: { id: "demo.plugin" },
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/demo-plugin",
+          repo: "openclaw/demo-plugin",
+          ref: "refs/tags/v1.0.0",
+          commit: "abc123",
+          path: ".",
+          importedAt: Date.now(),
+        },
+      }),
+    ).toThrow("package.json openclaw.environment is required");
   });
 
   it("requires source metadata for code plugins", () => {

@@ -350,7 +350,8 @@ clawhub package backfill-artifacts --all --apply
 - Checks whether a package is ready for future OpenClaw consumption.
 - Calls `GET /api/v1/packages/{name}/readiness`.
 - Reports blockers for official status, ClawPack availability, artifact digest,
-  source provenance, OpenClaw compatibility, host targets, and scan state.
+  source provenance, OpenClaw compatibility, host targets, environment metadata,
+  and scan state.
 - Flags:
   - `--json`: machine-readable output.
 
@@ -376,7 +377,9 @@ clawhub package readiness @openclaw/example-plugin
   legacy ZIP compatibility path. The CLI does not run `npm pack` for you.
 - For GitHub sources, source attribution is auto-populated from the repo, resolved commit, ref, and subpath.
 - For local folders, source attribution is auto-detected from local git when the origin remote points at GitHub.
-- External code plugins must declare `openclaw.compat.pluginApi`, `openclaw.build.openclawVersion`, and `openclaw.hostTargets` explicitly.
+- External code plugins must declare `openclaw.compat.pluginApi`,
+  `openclaw.build.openclawVersion`, `openclaw.hostTargets`, and
+  `openclaw.environment` explicitly.
   Top-level `package.json.version` is not used as a fallback for publish validation.
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
@@ -417,6 +420,12 @@ External code plugins need a small amount of OpenClaw metadata in
   "openclaw": {
     "extensions": ["./index.ts"],
     "hostTargets": ["darwin-arm64", "linux-x64", "win32-x64"],
+    "environment": {
+      "browser": false,
+      "desktop": false,
+      "nativeDependencies": [],
+      "externalServices": []
+    },
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2"
     },
@@ -432,6 +441,7 @@ Required fields:
 - `openclaw.compat.pluginApi`
 - `openclaw.build.openclawVersion`
 - `openclaw.hostTargets`
+- `openclaw.environment`
 
 Notes:
 
@@ -440,6 +450,9 @@ Notes:
 - `openclaw.hostTargets` should list explicit supported host targets such as
   `darwin-arm64`, `linux-x64`, or `win32-x64`; avoid vague prose-only platform
   support.
+- `openclaw.environment` should explicitly declare runtime requirements. Use
+  `{}` when the plugin has no browser, desktop, native dependency, external
+  service, binary, audio, or OS-permission requirements.
 - `openclaw.compat.minGatewayVersion` and
   `openclaw.build.pluginSdkVersion` are optional extras if you want to publish
   more detailed compatibility metadata.

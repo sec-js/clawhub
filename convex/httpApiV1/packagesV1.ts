@@ -106,6 +106,57 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   }
 }
 
+function normalizeCapabilityTagSegment(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getEnabledQueryFlag(params: URLSearchParams, name: string) {
+  const value = params.get(name)?.trim().toLowerCase();
+  return value === "true" || value === "1";
+}
+
+function getCapabilityTagFromQueryParams(params: URLSearchParams) {
+  const explicit = params.get("capabilityTag")?.trim();
+  if (explicit) return explicit;
+
+  const target = params.get("target")?.trim() || params.get("hostTarget")?.trim();
+  if (target) return `host:${normalizeCapabilityTagSegment(target)}`;
+
+  const os = params.get("os")?.trim();
+  if (os) return `host-os:${normalizeCapabilityTagSegment(os)}`;
+
+  const arch = params.get("arch")?.trim();
+  if (arch) return `host-arch:${normalizeCapabilityTagSegment(arch)}`;
+
+  const libc = params.get("libc")?.trim();
+  if (libc) return `host-libc:${normalizeCapabilityTagSegment(libc)}`;
+
+  const externalService = params.get("externalService")?.trim();
+  if (externalService) return `external-service:${normalizeCapabilityTagSegment(externalService)}`;
+
+  const binary = params.get("binary")?.trim();
+  if (binary) return `binary:${normalizeCapabilityTagSegment(binary)}`;
+
+  const osPermission = params.get("osPermission")?.trim();
+  if (osPermission) return `os-permission:${normalizeCapabilityTagSegment(osPermission)}`;
+
+  if (getEnabledQueryFlag(params, "requiresBrowser")) return "requires:browser";
+  if (getEnabledQueryFlag(params, "requiresDesktop")) return "requires:desktop";
+  if (getEnabledQueryFlag(params, "requiresNativeDeps")) return "requires:native-deps";
+  if (getEnabledQueryFlag(params, "nativeDeps")) return "requires:native-deps";
+  if (getEnabledQueryFlag(params, "requiresExternalService")) {
+    return "requires:external-service";
+  }
+  if (getEnabledQueryFlag(params, "requiresBinary")) return "requires:binary";
+  if (getEnabledQueryFlag(params, "requiresOsPermission")) return "requires:os-permission";
+  if (getEnabledQueryFlag(params, "environmentDeclared")) return "environment:declared";
+  return undefined;
+}
+
 type PackageListQueryArgs = {
   family?: "skill" | "code-plugin" | "bundle-plugin";
   channel?: "official" | "community" | "private";
@@ -855,7 +906,7 @@ async function listPackages(
   const cursor = url.searchParams.get("cursor");
   const familyRaw = url.searchParams.get("family");
   const channelRaw = url.searchParams.get("channel")?.trim();
-  const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
+  const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
   const isOfficialRaw = url.searchParams.get("isOfficial");
   const highlightedOnly =
     url.searchParams.get("featured") === "true" ||
@@ -1579,7 +1630,7 @@ async function searchPackages(
     url.searchParams.get("highlightedOnly") === "true" ||
     url.searchParams.get("highlightedOnly") === "1";
   const executesCodeRaw = url.searchParams.get("executesCode");
-  const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
+  const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
   const family =
     familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
@@ -2236,6 +2287,9 @@ function buildPackageReadiness(pkg: PublicPackageDocLike) {
   const checks: PackageReadinessCheck[] = [];
   const add = (check: PackageReadinessCheck) => checks.push(check);
   const hostTargets = pkg.capabilities?.hostTargets ?? [];
+  const capabilityTags = pkg.capabilities?.capabilityTags ?? [];
+  const hasEnvironmentMetadata =
+    pkg.family !== "code-plugin" || capabilityTags.includes("environment:declared");
   const scanStatus = pkg.verification?.scanStatus ?? "not-run";
 
   add({
@@ -2294,6 +2348,14 @@ function buildPackageReadiness(pkg: PublicPackageDocLike) {
       hostTargets.length > 0
         ? `Targets: ${hostTargets.join(", ")}.`
         : "At least one host target is required.",
+  });
+  add({
+    id: "environment",
+    label: "Environment metadata",
+    status: hasEnvironmentMetadata ? "pass" : "fail",
+    message: hasEnvironmentMetadata
+      ? "Runtime environment requirements are declared."
+      : "openclaw.environment is required for code plugins.",
   });
   add({
     id: "scan",

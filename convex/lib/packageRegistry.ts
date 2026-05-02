@@ -63,8 +63,98 @@ function normalizeNamedList(input: unknown): string[] {
     .filter(Boolean);
 }
 
+function normalizeTagSegment(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function uniq(items: Array<string | undefined | null>) {
   return [...new Set(items.map((item) => item?.trim()).filter(Boolean) as string[])];
+}
+
+function isRequiredEnvironmentFlag(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "required";
+  }
+  if (!isRecord(value)) return false;
+  return value.required === true || value.enabled === true;
+}
+
+function normalizeEnvironmentNames(input: unknown): string[] {
+  return normalizeNamedList(input).map(normalizeTagSegment).filter(Boolean).slice(0, 20);
+}
+
+function extractEnvironmentCapabilityTags(environment: JsonRecord | undefined) {
+  if (!environment) return [];
+
+  const nativeDeps = normalizeEnvironmentNames(environment.nativeDependencies);
+  const externalServices = normalizeEnvironmentNames(environment.externalServices);
+  const binaries = normalizeEnvironmentNames(environment.binaries);
+  const osPermissions = normalizeEnvironmentNames(environment.osPermissions);
+  const tags: Array<string | null> = ["environment:declared"];
+
+  if (
+    isRequiredEnvironmentFlag(environment.browser) ||
+    isRequiredEnvironmentFlag(environment.requiresBrowser)
+  ) {
+    tags.push("requires:browser");
+  }
+  if (
+    isRequiredEnvironmentFlag(environment.desktop) ||
+    isRequiredEnvironmentFlag(environment.requiresDesktop)
+  ) {
+    tags.push("requires:desktop");
+  }
+  if (
+    isRequiredEnvironmentFlag(environment.audio) ||
+    isRequiredEnvironmentFlag(environment.microphone)
+  ) {
+    tags.push("requires:audio");
+  }
+  if (isRequiredEnvironmentFlag(environment.nativeDependencies) || nativeDeps.length > 0) {
+    tags.push("requires:native-deps", ...nativeDeps.map((entry) => `native-dep:${entry}`));
+  }
+  if (isRequiredEnvironmentFlag(environment.externalServices) || externalServices.length > 0) {
+    tags.push(
+      "requires:external-service",
+      ...externalServices.map((entry) => `external-service:${entry}`),
+    );
+  }
+  if (isRequiredEnvironmentFlag(environment.binaries) || binaries.length > 0) {
+    tags.push("requires:binary", ...binaries.map((entry) => `binary:${entry}`));
+  }
+  if (isRequiredEnvironmentFlag(environment.osPermissions) || osPermissions.length > 0) {
+    tags.push("requires:os-permission", ...osPermissions.map((entry) => `os-permission:${entry}`));
+  }
+  if (
+    isRequiredEnvironmentFlag(environment.remoteHost) ||
+    isRequiredEnvironmentFlag(environment.remoteExecutionHost)
+  ) {
+    tags.push("remote-host");
+  }
+
+  return uniq(tags);
+}
+
+function extractHostTargetCapabilityTags(hostTargets: string[]) {
+  const tags: string[] = [];
+  for (const target of hostTargets) {
+    const normalized = normalizeTagSegment(target);
+    if (!normalized) continue;
+    tags.push(`host:${normalized}`);
+    const [os, arch, libc] = normalized.split("-");
+    if (os === "darwin" || os === "linux" || os === "win32") {
+      tags.push(`host-os:${os}`);
+      if (arch) tags.push(`host-arch:${arch}`);
+      if (libc) tags.push(`host-libc:${libc}`);
+    }
+  }
+  return uniq(tags);
 }
 
 export function normalizePackageName(name: string) {
@@ -235,6 +325,8 @@ export function extractCodePluginArtifacts(params: {
   if (hostTargets.length === 0) {
     throw new ConvexError("Code plugins must declare openclaw.hostTargets");
   }
+  const environment = isRecord(openclaw?.environment) ? openclaw.environment : undefined;
+  const environmentTags = extractEnvironmentCapabilityTags(environment);
 
   const httpRouteCount = Array.isArray(params.pluginManifest.httpRoutes)
     ? params.pluginManifest.httpRoutes.length
@@ -280,7 +372,8 @@ export function extractCodePluginArtifacts(params: {
     ...channels.map((entry) => `channel:${entry}`),
     ...providers.map((entry) => `provider:${entry}`),
     ...(capabilities.setupEntry ? ["setup"] : []),
-    ...hostTargets.map((entry) => `host:${entry}`),
+    ...extractHostTargetCapabilityTags(hostTargets),
+    ...environmentTags,
     ...(toolNames.length > 0 ? ["tools"] : []),
   ]);
 
@@ -300,6 +393,7 @@ export function extractBundlePluginArtifacts(params: {
   source?: SourceInfo;
 }) {
   const openclaw = isRecord(params.packageJson?.openclaw) ? params.packageJson.openclaw : undefined;
+  const environment = isRecord(openclaw?.environment) ? openclaw.environment : undefined;
   const manifest = params.bundleManifest;
   const runtimeId =
     (typeof manifest?.id === "string" && manifest.id.trim()) ||
@@ -327,7 +421,8 @@ export function extractBundlePluginArtifacts(params: {
     capabilityTags: uniq([
       "bundle-only",
       bundleFormat ? `format:${bundleFormat}` : null,
-      ...hostTargets.map((entry) => `host:${entry}`),
+      ...extractHostTargetCapabilityTags(hostTargets),
+      ...extractEnvironmentCapabilityTags(environment),
     ]),
   };
 
