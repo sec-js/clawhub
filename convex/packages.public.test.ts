@@ -233,6 +233,23 @@ const publishPackageForTrustedPublisherInternalHandler = (
     unknown
   >
 )._handler;
+
+const packageManifestFile = {
+  path: "openclaw.plugin.json",
+  size: 32,
+  storageId: "storage:manifest",
+  sha256: "manifest",
+  contentType: "application/json",
+};
+
+function makePackageManifestStorage() {
+  return {
+    get: vi.fn(async (id: string) =>
+      id === "storage:manifest" ? new Blob([JSON.stringify({ id: "demo.plugin" })]) : null,
+    ),
+  };
+}
+
 const reportPackageForUserInternalHandler = (
   reportPackageForUserInternal as unknown as WrappedHandler<
     {
@@ -2999,9 +3016,7 @@ describe("packages public queries", () => {
       scheduler: {
         runAfter: vi.fn(),
       },
-      storage: {
-        get: vi.fn(),
-      },
+      storage: makePackageManifestStorage(),
     };
 
     await expect(
@@ -3013,7 +3028,7 @@ describe("packages public queries", () => {
           version: "1.0.0",
           changelog: "init",
           bundle: { hostTargets: ["desktop"] },
-          files: [],
+          files: [packageManifestFile],
         },
       }),
     ).resolves.toMatchObject({
@@ -3081,9 +3096,7 @@ describe("packages public queries", () => {
       scheduler: {
         runAfter: vi.fn(),
       },
-      storage: {
-        get: vi.fn(),
-      },
+      storage: makePackageManifestStorage(),
     };
 
     await expect(
@@ -3095,7 +3108,7 @@ describe("packages public queries", () => {
           version: "1.0.0",
           changelog: "init",
           bundle: { hostTargets: ["desktop"] },
-          files: [],
+          files: [packageManifestFile],
         },
       }),
     ).resolves.toMatchObject({
