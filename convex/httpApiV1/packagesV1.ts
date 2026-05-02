@@ -31,7 +31,12 @@ import {
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
-import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
+import {
+  getClawPackSizeError,
+  getPublishFileSizeError,
+  MAX_CLAWPACK_BYTES,
+  MAX_PUBLISH_FILE_BYTES,
+} from "../lib/publishLimits";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
 import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { generateToken, hashToken } from "../lib/tokens";
@@ -895,6 +900,29 @@ function bytesToArrayBuffer(bytes: Uint8Array) {
   return copy.buffer;
 }
 
+async function storeClawPackMetadataFile(
+  ctx: ActionCtx,
+  entries: Array<{ path: string; bytes: Uint8Array }>,
+  path: string,
+) {
+  const entry = entries.find((candidate) => candidate.path.toLowerCase() === path.toLowerCase());
+  if (!entry) throw new Error(`ClawPack must contain package/${path}`);
+  if (entry.bytes.byteLength > MAX_PUBLISH_FILE_BYTES) {
+    throw new Error(getPublishFileSizeError(entry.path));
+  }
+  const contentType = inferStoredPackageContentType(entry.path);
+  const storageId = await ctx.storage.store(
+    new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
+  );
+  return {
+    path: entry.path,
+    size: entry.bytes.byteLength,
+    storageId,
+    sha256: await sha256Hex(entry.bytes),
+    contentType,
+  };
+}
+
 async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
   const form = await request.formData();
   const payloadRaw = form.get("payload");
@@ -927,8 +955,8 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
     if (form.getAll("files").some((entry) => typeof entry !== "string")) {
       throw new Error("Upload either a ClawPack tarball or individual files, not both");
     }
-    if (clawpackEntry.size > MAX_PUBLISH_FILE_BYTES) {
-      throw new Error(getPublishFileSizeError(clawpackEntry.name));
+    if (clawpackEntry.size > MAX_CLAWPACK_BYTES) {
+      throw new Error(getClawPackSizeError(clawpackEntry.name));
     }
     const artifactBytes = new Uint8Array(await clawpackEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
@@ -946,23 +974,8 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
       npmUnpackedSize: parsed.unpackedSize,
       npmFileCount: parsed.fileCount,
     };
-    for (const entry of parsed.entries) {
-      if (isMacJunkPath(entry.path)) continue;
-      if (entry.bytes.byteLength > MAX_PUBLISH_FILE_BYTES) {
-        throw new Error(getPublishFileSizeError(entry.path));
-      }
-      const contentType = inferStoredPackageContentType(entry.path);
-      const storageId = await ctx.storage.store(
-        new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
-      );
-      files.push({
-        path: entry.path,
-        size: entry.bytes.byteLength,
-        storageId,
-        sha256: await sha256Hex(entry.bytes),
-        contentType,
-      });
-    }
+    files.push(await storeClawPackMetadataFile(ctx, parsed.entries, "package.json"));
+    files.push(await storeClawPackMetadataFile(ctx, parsed.entries, "openclaw.plugin.json"));
     return parsePackagePublishBody({ ...payload, files, artifact });
   }
 
