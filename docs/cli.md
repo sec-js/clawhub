@@ -506,6 +506,22 @@ Example:
 clawhub package readiness @openclaw/example-plugin
 ```
 
+### `package migration-status <name>`
+
+- Shows operator-oriented migration status for a package that may replace a
+  bundled OpenClaw plugin.
+- Calls the same computed readiness endpoint as `package readiness`, but prints
+  migration-focused status, latest version, official-package state, checks, and
+  blockers.
+- Flags:
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package migration-status @openclaw/example-plugin
+```
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
