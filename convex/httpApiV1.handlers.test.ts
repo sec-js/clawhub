@@ -3800,8 +3800,7 @@ describe("httpApiV1 handlers", () => {
       package: { name: "@scope/demo-plugin" },
       artifact: {
         kind: "npm-pack",
-        tarballUrl:
-          "https://example.com/api/npm/@scope/demo-plugin/-/scope-demo-plugin-1.0.0.tgz",
+        tarballUrl: "https://example.com/api/npm/@scope/demo-plugin/-/scope-demo-plugin-1.0.0.tgz",
       },
     });
   });

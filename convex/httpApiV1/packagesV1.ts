@@ -2302,11 +2302,15 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
-  if (packageSegments[0] === "versions" && packageSegments[1] && packageSegments[2] === "artifact") {
+  if (
+    packageSegments[0] === "versions" &&
+    packageSegments[1] &&
+    packageSegments[2] === "artifact"
+  ) {
     if (skillDetail?.skill) return text("Artifact not found", 404, rate.headers);
     const result = (await runQueryRef(
       ctx,
-        internalRefs.packages.getVersionByNameForViewerInternal,
+      internalRefs.packages.getVersionByNameForViewerInternal,
       {
         name: packageName,
         version: packageSegments[1],
@@ -2389,7 +2393,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const result = (await runQueryRef(
       ctx,
-        internalRefs.packages.getVersionByNameForViewerInternal,
+      internalRefs.packages.getVersionByNameForViewerInternal,
       {
         name: packageName,
         version: packageSegments[1],
