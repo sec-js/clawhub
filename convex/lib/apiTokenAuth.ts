@@ -54,10 +54,14 @@ export async function requireApiTokenUser(
   )) as Doc<"users"> | null;
   if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
 
-  await ctx.runMutation(
-    internalRefs.tokens.touchInternal as never,
-    { tokenId: apiToken._id } as never,
-  );
+  try {
+    await ctx.runMutation(
+      internalRefs.tokens.touchInternal as never,
+      { tokenId: apiToken._id } as never,
+    );
+  } catch {
+    // Best-effort metadata; auth succeeded and should not fail on write contention.
+  }
   return { user, userId: user._id };
 }
 
@@ -105,12 +109,16 @@ export async function requirePackagePublishAuth(
     } as never,
   )) as PackagePublishTokenDoc | null;
   if (publishToken && !publishToken.revokedAt && publishToken.expiresAt > Date.now()) {
-    await ctx.runMutation(
-      internalRefs.packagePublishTokens.touchInternal as never,
-      {
-        tokenId: publishToken._id,
-      } as never,
-    );
+    try {
+      await ctx.runMutation(
+        internalRefs.packagePublishTokens.touchInternal as never,
+        {
+          tokenId: publishToken._id,
+        } as never,
+      );
+    } catch {
+      // Best-effort metadata; publish auth should not fail on touch contention.
+    }
     return { kind: "github-actions", publishToken };
   }
 
