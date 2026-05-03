@@ -4,7 +4,7 @@ import { getOptionalApiTokenUserId } from "./apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_SHARDS = 16;
+const RATE_LIMIT_SHARDS = 64;
 export const RATE_LIMITS = {
   read: { ip: 600, key: 2400 },
   write: { ip: 45, key: 180 },
@@ -235,7 +235,7 @@ function shouldTrustForwardedIps() {
 function isRateLimitWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    error.message.includes("rateLimits") &&
+    (error.message.includes("rateLimits") || error.message.includes("rateLimitShards")) &&
     error.message.includes("changed while this mutation was being run")
   );
 }

@@ -22,14 +22,12 @@ const consumeHandler = (
 )._handler;
 
 describe("rate limit sharding", () => {
-  it("sums all shards when checking status", async () => {
+  it("sums shard rows without reading the legacy rateLimits table", async () => {
     const ctx = {
       db: {
-        query: vi.fn((table: string) => ({
+        query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
-            collect: vi.fn(async () =>
-              table === "rateLimits" ? [{ count: 3 }] : [{ count: 4 }, { count: 5 }],
-            ),
+            collect: vi.fn(async () => [{ count: 4 }, { count: 5 }]),
           })),
         })),
       },
@@ -42,7 +40,9 @@ describe("rate limit sharding", () => {
     });
 
     expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(8);
+    expect(result.remaining).toBe(11);
+    expect(ctx.db.query).toHaveBeenCalledTimes(1);
+    expect(ctx.db.query).toHaveBeenCalledWith("rateLimitShards");
   });
 
   it("writes only the selected shard when consuming", async () => {
@@ -55,7 +55,7 @@ describe("rate limit sharding", () => {
           })),
         })),
       });
-      return { unique: vi.fn(async () => null) };
+      return { first: vi.fn(async () => null) };
     });
     const ctx = {
       db: {

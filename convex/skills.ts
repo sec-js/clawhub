@@ -124,8 +124,8 @@ const MAX_LIST_LIMIT = 50;
 const MAX_PUBLIC_LIST_LIMIT = 200;
 const MAX_LIST_BULK_LIMIT = 200;
 const MAX_LIST_TAKE = 1000;
-const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 2_000;
-const MAX_SKILL_CATALOG_SCAN_PAGES = 20;
+const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 500;
+const MAX_SKILL_CATALOG_SCAN_PAGES = 6;
 const MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE = 200;
 const HARD_DELETE_BATCH_SIZE = 100;
 const HARD_DELETE_VERSION_BATCH_SIZE = 10;
@@ -3906,7 +3906,7 @@ export const getActiveSkillBatchForLlmBackfillInternal = internalQuery({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 10;
+    const batchSize = clampInt(args.batchSize ?? 10, 1, 50);
     const cursor = args.cursor ?? 0;
 
     // Use built-in by_creation_time index for stable cursor-based pagination

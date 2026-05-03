@@ -554,7 +554,7 @@ export const backfillLlmEval: ReturnType<typeof internalAction> = internalAction
       return { error: "OPENAI_API_KEY not configured" };
     }
 
-    const requestedBatchSize = Math.max(1, Math.floor(args.batchSize ?? 25));
+    const requestedBatchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 50));
     const maxToSchedule =
       args.maxToSchedule === undefined ? undefined : Math.max(0, Math.floor(args.maxToSchedule));
     const cursor = args.cursor ?? 0;

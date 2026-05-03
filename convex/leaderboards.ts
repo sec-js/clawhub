@@ -13,7 +13,7 @@ import {
 
 const MAX_TRENDING_LIMIT = 200;
 const KEEP_LEADERBOARD_ENTRIES = 3;
-const DAILY_STATS_PAGE_SIZE = 5_000;
+const DAILY_STATS_PAGE_SIZE = 1_000;
 
 // ---------------------------------------------------------------------------
 // Action → Query → Mutation pattern (avoids 32K document-read limit)

@@ -173,6 +173,35 @@ describe("applyRateLimit headers", () => {
     expect(headers.get("Retry-After")).toBeNull();
   });
 
+  it("converts shard write conflicts into a rate-limit response", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_500_000);
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        allowed: true,
+        remaining: 19,
+        limit: 20,
+        resetAt: 2_530_000,
+      }),
+      runMutation: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Document in table "rateLimitShards" changed while this mutation was being run',
+          ),
+        ),
+    } as unknown as Parameters<typeof applyRateLimit>[0];
+    const request = new Request("https://example.com", {
+      headers: { "cf-connecting-ip": "203.0.113.1" },
+    });
+
+    const result = await applyRateLimit(ctx, request, "download");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(429);
+    expect(result.response.headers.get("Retry-After")).toBe("30");
+  });
+
   it("allows authenticated users when user bucket is healthy and shared ip bucket is exhausted", async () => {
     vi.spyOn(Date, "now").mockReturnValue(3_000_000);
     const ctx = makeRateLimitCtx({
