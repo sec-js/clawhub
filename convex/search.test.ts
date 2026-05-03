@@ -86,7 +86,7 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("orf");
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
+      expect.objectContaining({ query: "orf", queryTokens: ["orf"], limit: 200 }),
     );
   });
 
@@ -406,9 +406,8 @@ describe("search helpers", () => {
     );
 
     expect(runQuery).toHaveBeenCalledTimes(4);
-    expect(runQuery).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ query: "image", limit: 400 }),
+    expect(runQuery.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ query: "image", limit: 200 }),
     );
     expect(result).toHaveLength(25);
     expect(result.some((entry) => entry.skill.slug === "antigravity-image-generator")).toBe(true);
@@ -1213,7 +1212,7 @@ describe("soul search", () => {
     expect(result[0].soul.slug).toBe("orf");
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
+      expect.objectContaining({ query: "orf", queryTokens: ["orf"], limit: 100 }),
     );
   });
 
@@ -1237,6 +1236,7 @@ describe("soul search", () => {
     expect(result).toHaveLength(1);
     expect(result[0].soul.slug).toBe("orf-active");
     expect(ctx.usedIndexes).toContain("by_active_updated");
+    expect(ctx.takeLimits).toEqual([10]);
   });
 
   it("hydrates only new soul embedding ids across vector iterations", async () => {
@@ -1509,8 +1509,10 @@ function makeSoulLexicalCtx(params: {
   recentSouls: Array<ReturnType<typeof makeSoulDoc>>;
 }) {
   const usedIndexes: string[] = [];
+  const takeLimits: number[] = [];
   return {
     usedIndexes,
+    takeLimits,
     db: {
       query: vi.fn((table: string) => {
         if (table !== "souls") throw new Error(`Unexpected table ${table}`);
@@ -1525,7 +1527,10 @@ function makeSoulLexicalCtx(params: {
             if (index === "by_active_updated") {
               return {
                 order: () => ({
-                  take: vi.fn().mockResolvedValue(params.recentSouls),
+                  take: vi.fn((limit: number) => {
+                    takeLimits.push(limit);
+                    return Promise.resolve(params.recentSouls);
+                  }),
                 }),
               };
             }

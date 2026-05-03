@@ -58,6 +58,8 @@ const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
 const POPULARITY_WEIGHT = 0.08;
 const FALLBACK_SCAN_LIMIT = 2000;
+const MIN_FALLBACK_SCAN_LIMIT = 100;
+const FALLBACK_RECALL_MULTIPLIER = 2;
 const MIN_STABLE_SEARCH_RECALL_LIMIT = 100;
 const MAX_DIRECT_SKILL_SEARCH_CANDIDATES = 100;
 const MIN_VECTOR_SEARCH_CANDIDATES = 50;
@@ -265,7 +267,10 @@ export const searchSkills: ReturnType<typeof action> = action({
         : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
             query,
             queryTokens,
-            limit: Math.min(Math.max(recallLimit * 4, 200), FALLBACK_SCAN_LIMIT),
+            limit: Math.min(
+              Math.max(recallLimit * FALLBACK_RECALL_MULTIPLIER, MIN_FALLBACK_SCAN_LIMIT),
+              FALLBACK_SCAN_LIMIT,
+            ),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
             capabilityTag: args.capabilityTag,
@@ -724,7 +729,10 @@ export const searchSouls: ReturnType<typeof action> = action({
         : ((await ctx.runQuery(internal.search.lexicalFallbackSouls, {
             query,
             queryTokens,
-            limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
+            limit: Math.min(
+              Math.max(limit * FALLBACK_RECALL_MULTIPLIER, MIN_FALLBACK_SCAN_LIMIT),
+              FALLBACK_SCAN_LIMIT,
+            ),
           })) as HydratedSoulEntry[]);
     const mergedMatches = mergeUniqueBySoulId(exactMatches, fallbackMatches);
 
@@ -776,6 +784,7 @@ export const lexicalFallbackSouls = internalQuery({
   },
   handler: async (ctx, args): Promise<HydratedSoulEntry[]> => {
     const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
+    const scanLimit = limit;
     const seenSoulIds = new Set<Id<"souls">>();
     const candidates: Doc<"souls">[] = [];
 
@@ -795,7 +804,7 @@ export const lexicalFallbackSouls = internalQuery({
       .query("souls")
       .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
-      .take(FALLBACK_SCAN_LIMIT);
+      .take(scanLimit);
 
     for (const soul of recentSouls) {
       if (seenSoulIds.has(soul._id)) continue;
