@@ -12,6 +12,11 @@ on:
           - full
           - backend
           - frontend
+      allow_deleting_large_indexes:
+        description: "Allow Convex to delete large indexes"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-production
@@ -94,6 +99,7 @@ jobs:
           fi
 
           echo "Deploy target: ${{ needs.validate-deploy-request.outputs.target }}"
+          echo "Allow deleting large Convex indexes: ${{ inputs.allow_deleting_large_indexes }}"
 
           if [[ -z "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" ]]; then
             echo "PLAYWRIGHT_AUTH_STORAGE_STATE_JSON not set; authenticated smoke will be skipped."
@@ -118,7 +124,13 @@ jobs:
 
       - name: Deploy Convex
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
-        run: bun run convex:deploy
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.allow_deleting_large_indexes }}" == "true" ]]; then
+            bunx convex deploy --typecheck=disable --yes --allow-deleting-large-indexes
+          else
+            bun run convex:deploy
+          fi
 
       - name: Verify Convex contract
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
