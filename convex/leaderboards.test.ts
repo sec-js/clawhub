@@ -74,7 +74,7 @@ describe("leaderboards.rebuildTrendingLeaderboardInternal", () => {
     expect(result).toEqual({ ok: true, count: 1 });
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ cursor: null, limit: 5000 }),
+      expect.objectContaining({ cursor: null, limit: 1000 }),
     );
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
