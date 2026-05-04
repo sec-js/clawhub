@@ -69,6 +69,13 @@ export async function getOptionalApiTokenUserId(
   ctx: ActionCtx,
   request: Request,
 ): Promise<Doc<"users">["_id"] | null> {
+  return (await getOptionalApiTokenUser(ctx, request))?.userId ?? null;
+}
+
+export async function getOptionalApiTokenUser(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<TokenAuthResult | null> {
   const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   const token = parseBearerToken(header);
   if (!token) return null;
@@ -90,7 +97,7 @@ export async function getOptionalApiTokenUserId(
   )) as Doc<"users"> | null;
   if (!user || user.deletedAt || user.deactivatedAt) return null;
 
-  return user._id;
+  return { user, userId: user._id };
 }
 
 export async function requirePackagePublishAuth(

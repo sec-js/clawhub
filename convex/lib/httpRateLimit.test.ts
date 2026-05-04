@@ -14,6 +14,7 @@ type MockRateLimitPlan = {
   user?: MockRateLimitStatus;
   tokenValid?: boolean;
   userActive?: boolean;
+  userRole?: "admin" | "moderator" | "user" | null;
 };
 
 function makeRateLimitCtx(plan: MockRateLimitPlan) {
@@ -24,7 +25,12 @@ function makeRateLimitCtx(plan: MockRateLimitPlan) {
     }
     if ("tokenId" in args) {
       if (plan.userActive === false) return null;
-      return { _id: "users_123", deletedAt: undefined, deactivatedAt: undefined };
+      return {
+        _id: "users_123",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        role: plan.userRole ?? "user",
+      };
     }
     if ("key" in args && "limit" in args && "windowMs" in args) {
       const key = String(args.key);
@@ -125,6 +131,11 @@ describe("RATE_LIMITS", () => {
   it("allows trusted publish token mint bursts from shared CI egress", () => {
     expect(RATE_LIMITS.trustedPublish.ip).toBeGreaterThanOrEqual(600);
     expect(RATE_LIMITS.trustedPublish.key).toBeGreaterThanOrEqual(2400);
+  });
+
+  it("gives admin API tokens a larger authenticated bucket", () => {
+    expect(RATE_LIMITS.write.adminKey).toBeGreaterThan(RATE_LIMITS.write.key);
+    expect(RATE_LIMITS.trustedPublish.adminKey).toBeGreaterThan(RATE_LIMITS.trustedPublish.key);
   });
 });
 
@@ -280,6 +291,49 @@ describe("applyRateLimit headers", () => {
     const consumedKeys = runMutation.mock.calls.map(([, args]) => String(args.key));
     expect(consumedKeys.some((key) => key.startsWith("user:"))).toBe(true);
     expect(consumedKeys.some((key) => key.startsWith("ip:"))).toBe(false);
+  });
+
+  it("uses the admin bucket for authenticated admin requests", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(3_200_000);
+    const ctx = makeRateLimitCtx({
+      userRole: "admin",
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: RATE_LIMITS.write.ip,
+        resetAt: 3_240_000,
+      },
+      user: {
+        allowed: true,
+        remaining: RATE_LIMITS.write.adminKey,
+        limit: RATE_LIMITS.write.adminKey,
+        resetAt: 3_230_000,
+      },
+    });
+    const request = new Request("https://example.com", {
+      headers: {
+        authorization: "Bearer clh_admin",
+        "cf-connecting-ip": "203.0.113.1",
+      },
+    });
+
+    const result = await applyRateLimit(ctx, request, "write");
+
+    expect(result.ok).toBe(true);
+    const runQuery = (ctx as unknown as { runQuery: ReturnType<typeof vi.fn> }).runQuery;
+    const rateLimitStatusCalls = runQuery.mock.calls
+      .map(([, args]) => args as Record<string, unknown>)
+      .filter((args) => "key" in args && "limit" in args);
+    expect(rateLimitStatusCalls).toContainEqual(
+      expect.objectContaining({
+        key: "user:users_123",
+        limit: RATE_LIMITS.write.adminKey,
+      }),
+    );
+    if (!result.ok) return;
+    expect(new Headers(result.headers).get("X-RateLimit-Limit")).toBe(
+      String(RATE_LIMITS.write.adminKey),
+    );
   });
 
   it("denies authenticated users when user bucket is exhausted even if ip bucket is healthy", async () => {

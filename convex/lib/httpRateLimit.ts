@@ -1,15 +1,16 @@
 import { internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getOptionalApiTokenUserId } from "./apiTokenAuth";
+import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_SHARDS = 64;
 export const RATE_LIMITS = {
-  read: { ip: 600, key: 2400 },
-  write: { ip: 45, key: 2400 },
-  trustedPublish: { ip: 600, key: 2400 },
-  download: { ip: 180, key: 720 },
+  read: { ip: 600, key: 2400, adminKey: 24000 },
+  write: { ip: 45, key: 2400, adminKey: 24000 },
+  trustedPublish: { ip: 600, key: 2400, adminKey: 24000 },
+  download: { ip: 180, key: 720, adminKey: 7200 },
 } as const;
 
 type RateLimitResult = {
@@ -24,20 +25,22 @@ export async function applyRateLimit(
   request: Request,
   kind: keyof typeof RATE_LIMITS,
 ): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const userId = await getOptionalApiTokenUserId(ctx, request);
+  const auth = await getOptionalApiTokenUser(ctx, request);
   const ip = getClientIp(request) ?? "unknown";
   const ipSource = getClientIpSource(request);
   const hasClientIp = ip !== "unknown";
 
   // Authenticated requests are enforced and consumed by user bucket only to
   // avoid draining shared IP quota.
-  if (userId) {
-    const userResult = await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key);
+  if (auth) {
+    const userLimit = getAuthenticatedRateLimit(kind, auth.user);
+    const userResult = await checkRateLimit(ctx, `user:${auth.userId}`, userLimit);
     const headers = rateHeaders(userResult);
     if (!userResult.allowed) {
       console.info("rate_limit_denied", {
         kind,
         auth: true,
+        admin: auth.user.role === "admin",
         userAllowed: false,
         ipAllowed: null,
         ipSource,
@@ -101,6 +104,13 @@ function getAnonymousRateLimitKey(request: Request, kind: keyof typeof RATE_LIMI
   if (ip !== "unknown") return `ip:${ip}`;
   if (kind !== "download") return "ip:unknown";
   return `ip:unknown:download:${getDownloadRateLimitScope(request)}`;
+}
+
+function getAuthenticatedRateLimit(
+  kind: keyof typeof RATE_LIMITS,
+  user: Pick<Doc<"users">, "role">,
+) {
+  return user.role === "admin" ? RATE_LIMITS[kind].adminKey : RATE_LIMITS[kind].key;
 }
 
 export function getClientIp(request: Request) {
