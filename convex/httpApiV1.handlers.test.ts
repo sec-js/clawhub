@@ -5859,6 +5859,13 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        key: "ip:unknown",
+        limit: RATE_LIMITS.trustedPublish.ip,
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
         packageId: "packages:1",
         version: "1.0.0",
         repository: "openclaw/openclaw",

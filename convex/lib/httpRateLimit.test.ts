@@ -121,6 +121,11 @@ describe("RATE_LIMITS", () => {
     expect(RATE_LIMITS.write.ip).toBeLessThanOrEqual(45);
     expect(RATE_LIMITS.write.key).toBeGreaterThanOrEqual(2400);
   });
+
+  it("allows trusted publish token mint bursts from shared CI egress", () => {
+    expect(RATE_LIMITS.trustedPublish.ip).toBeGreaterThanOrEqual(600);
+    expect(RATE_LIMITS.trustedPublish.key).toBeGreaterThanOrEqual(2400);
+  });
 });
 
 describe("applyRateLimit headers", () => {

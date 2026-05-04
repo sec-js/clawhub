@@ -1317,7 +1317,7 @@ async function getPackageAndTrustedPublisherByName(ctx: ActionCtx, packageName: 
 }
 
 export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, "write");
+  const rate = await applyRateLimit(ctx, request, "trustedPublish");
   if (!rate.ok) return rate.response;
 
   const parsedBody = await request.json().catch(() => null);
