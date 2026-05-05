@@ -7,9 +7,16 @@ import {
   extractCodePluginArtifacts,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
+  tryNormalizePackageName,
 } from "./packageRegistry";
 
 describe("packageRegistry", () => {
+  it("can validate package names without throwing", () => {
+    expect(tryNormalizePackageName("@OpenClaw/Discord")).toBe("@openclaw/discord");
+    expect(tryNormalizePackageName("openclaw/discord")).toBeNull();
+    expect(tryNormalizePackageName("   ")).toBeNull();
+  });
+
   it("extracts code plugin compatibility and capabilities", () => {
     const result = extractCodePluginArtifacts({
       packageName: "@scope/demo-plugin",

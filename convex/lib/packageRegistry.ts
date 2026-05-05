@@ -160,12 +160,20 @@ function extractHostTargetCapabilityTags(hostTargets: string[]) {
 export function normalizePackageName(name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new ConvexError("Package name required");
-  const normalized = trimmed.toLowerCase();
-  if (!PACKAGE_NAME_PATTERN.test(normalized)) {
+  const normalized = tryNormalizePackageName(trimmed);
+  if (!normalized) {
     throw new ConvexError(
       "Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
     );
   }
+  return normalized;
+}
+
+export function tryNormalizePackageName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.toLowerCase();
+  if (!PACKAGE_NAME_PATTERN.test(normalized)) return null;
   return normalized;
 }
 
