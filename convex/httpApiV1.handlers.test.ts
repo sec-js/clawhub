@@ -5587,7 +5587,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
-      key: "user:users:1",
+      key: "user:users:1:write",
       limit: RATE_LIMITS.write.key,
     });
     expect(runAction).toHaveBeenCalledWith(
@@ -5902,7 +5902,7 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        key: "ip:unknown",
+        key: "ip:unknown:trustedPublish",
         limit: RATE_LIMITS.trustedPublish.ip,
       }),
     );
