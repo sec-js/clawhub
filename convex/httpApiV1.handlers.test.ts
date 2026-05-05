@@ -3306,6 +3306,22 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("packages detail returns not found for invalid package lookup names", async () => {
+    const runQuery = vi.fn(async () => {
+      throw new Error("unexpected package lookup");
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/openclaw%2Fdiscord"),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Package not found");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("packages detail returns stats for plugins", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
@@ -4852,6 +4868,22 @@ describe("httpApiV1 handlers", () => {
         },
       },
     });
+  });
+
+  it("npm mirror returns not found for invalid package lookup names", async () => {
+    const runQuery = vi.fn(async () => {
+      throw new Error("unexpected package lookup");
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.npmMirrorGetHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/npm/openclaw%2Fdiscord"),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Package not found");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("npm mirror accepts encoded scoped package packument paths", async () => {

@@ -30,6 +30,7 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { tryNormalizePackageName } from "../lib/packageRegistry";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
 import {
   getClawPackSizeError,
@@ -2192,17 +2193,21 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       : "read";
   const rate = await applyRateLimit(ctx, request, rateKind);
   if (!rate.ok) return rate.response;
+  const normalizedPackageName = tryNormalizePackageName(packageName);
+  if (!normalizedPackageName) return text("Package not found", 404, rate.headers);
 
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
-    name: packageName,
+    name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
     owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
   } | null;
-  const skillDetail = detail?.package ? null : await getSkillDetailForRequest(ctx, packageName);
+  const skillDetail = detail?.package
+    ? null
+    : await getSkillDetailForRequest(ctx, normalizedPackageName);
   if (!detail?.package && !skillDetail?.skill) return text("Package not found", 404, rate.headers);
   const packageDetail = detail?.package ? detail : null;
   const publicPackage = packageDetail?.package ?? null;
@@ -2652,10 +2657,12 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
   const isTarballRequest = path.rest[0] === "-" && Boolean(path.rest[1]);
   const rate = await applyRateLimit(ctx, request, isTarballRequest ? "download" : "read");
   if (!rate.ok) return rate.response;
+  const normalizedPackageName = tryNormalizePackageName(path.packageName);
+  if (!normalizedPackageName) return text("Package not found", 404, rate.headers);
 
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
-    name: path.packageName,
+    name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
   })) as {
     package: PublicPackageDocLike | null;
@@ -2664,7 +2671,7 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
   } | null;
   if (!detail?.package) return text("Package not found", 404, rate.headers);
 
-  const releases = await listNpmPackReleases(ctx, path.packageName, viewerUserId);
+  const releases = await listNpmPackReleases(ctx, normalizedPackageName, viewerUserId);
   if (isTarballRequest) {
     const tarballName = path.rest[1]!;
     const release = releases.find((candidate) => candidate.npmTarballName === tarballName);
