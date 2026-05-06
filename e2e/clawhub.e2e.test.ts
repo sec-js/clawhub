@@ -132,7 +132,7 @@ describe("clawhub e2e", () => {
     }
   });
 
-  itIfAdminAndUserTokens("shows staff CLI commands only in admin help", async () => {
+  itIfAdminAndUserTokens("shows moderator CLI commands only in admin help", async () => {
     const registry = getRegistry();
     const site = getSite();
     const { adminToken, userToken } = await resolveRoleHelpTokens(registry);

@@ -45,19 +45,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
 - Package reports feed `package moderation-queue` and audit `package.report`.
-  Moderators can triage a formal report with an explicit final action to
+  Moderators can review a formal report with an explicit final action to
   quarantine or revoke the affected release.
-- Package reports can be moved to `triaged` or `dismissed` with a moderator
+- Package reports can be moved to `confirmed` or `dismissed` with a moderator
   note. Only `open` reports count toward `packages.reportCount` and user active
-  report limits; triaging a report decrements the open count.
-- Skill reports now follow the same formal lifecycle: `open`, `triaged`, or
+  report limits; confirming or dismissing a report decrements the open count.
+- Skill reports now follow the same formal lifecycle: `open`, `confirmed`, or
   `dismissed`, with a single recorded `triageNote` used as the official outcome
-  note. Moderators can triage a formal report with an explicit final action to
+  note. Moderators can review a formal report with an explicit final action to
   hide the affected skill. Skill report and appeal timelines are stored in
-  `skillModerationEvents`.
+  `skillModerationEventLogs`.
 - Package owners and publisher members can read package moderation status via
   API/CLI, including open report count, latest release moderation state, and
-  download-block reasons. Reporter identities and report bodies remain staff
+  download-block reasons. Reporter identities and report bodies remain moderator
   intake data.
 - Package owners and publisher members can submit one open appeal per moderated
   package release. Accepted appeals can explicitly approve the affected release
@@ -70,10 +70,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Accepted skill appeals can explicitly restore the skill, and accepted package
   appeals can explicitly approve the release.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
-  moderation timelines live in `skillModerationEvents` and
-  `packageModerationEvents`.
-- Public queries hide non-active moderation statuses; staff can still access via
-  staff-only queries and unhide/restore/delete/ban.
+  moderation timelines live in `skillModerationEventLogs` and
+  `packageModerationEventLogs`.
+- Public queries hide non-active moderation statuses; moderators can still access via
+  moderator-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
   active-but-flagged (`flagged.suspicious`) entries from browse/search results.
 
@@ -100,7 +100,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   (for example base64-decoded `curl|bash` terminal commands). When triggered:
   - the uploaded skill is hidden immediately
   - the uploader is placed into manual moderation
-  - all owned skills are hidden until staff review
+  - all owned skills are hidden until moderator review
 
 ## AI comment scam backfill
 

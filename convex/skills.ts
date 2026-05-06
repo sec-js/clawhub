@@ -1666,7 +1666,7 @@ export const getBySlug = query({
     const showModerationInfo = isOwner || isMalwareBlocked || isSuspicious || overrideActive;
     const publicModerationSummary =
       !isOwner && overrideActive && !isMalwareBlocked && !isSuspicious
-        ? "Security findings were reviewed by staff and cleared for public use."
+        ? "Security findings were reviewed by moderators and cleared for public use."
         : skill.moderationSummary;
     const moderationInfo = showModerationInfo
       ? {

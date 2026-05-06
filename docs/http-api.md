@@ -229,9 +229,9 @@ Response:
 
 Notes:
 
-- Owners and staff can access moderation details for hidden skills.
+- Owners and moderators can access moderation details for hidden skills.
 - Public callers only get `200` for already-flagged visible skills.
-- Evidence is redacted for public callers and only includes raw snippets for owners/staff.
+- Evidence is redacted for public callers and only includes raw snippets for owners/moderators.
 
 ### `POST /api/v1/skills/{slug}/report`
 
@@ -297,7 +297,7 @@ Moderator/admin endpoint for skill report intake.
 
 Query params:
 
-- `status` (optional): `open` (default), `triaged`, `dismissed`, or `all`
+- `status` (optional): `open` (default), `confirmed`, `dismissed`, or `all`
 - `limit` (optional): integer (1-200)
 - `cursor` (optional): pagination cursor
 
@@ -338,10 +338,10 @@ Moderator/admin endpoint for resolving or reopening skill reports.
 Request:
 
 ```json
-{ "status": "triaged", "note": "Reviewed and hid affected version.", "finalAction": "hide" }
+{ "status": "confirmed", "note": "Reviewed and hid affected version.", "finalAction": "hide" }
 ```
 
-`note` is required for `triaged` and `dismissed`; it may be omitted when
+`note` is required for `confirmed` and `dismissed`; it may be omitted when
 setting `status` back to `open`. Pass `finalAction: "hide"` with a triaged
 report to hide the skill in the same auditable workflow.
 
@@ -586,7 +586,7 @@ Response:
 
 ### `GET /api/v1/packages/migrations`
 
-Staff endpoint for listing official OpenClaw plugin migration rows.
+Moderator endpoint for listing official OpenClaw plugin migration rows.
 
 Auth:
 
@@ -863,7 +863,7 @@ Auth:
 
 Query params:
 
-- `status` (optional): `open` (default), `triaged`, `dismissed`, or `all`
+- `status` (optional): `open` (default), `confirmed`, `dismissed`, or `all`
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 
@@ -900,7 +900,7 @@ Response:
 
 ### `GET /api/v1/packages/{name}/moderation`
 
-Owner/staff endpoint for package moderation visibility.
+Owner/moderator endpoint for package moderation visibility.
 
 Auth:
 
@@ -944,15 +944,15 @@ Request:
 
 ```json
 {
-  "status": "triaged",
+  "status": "confirmed",
   "note": "Reviewed and quarantined affected release.",
   "finalAction": "quarantine"
 }
 ```
 
-`note` is required for `triaged` and `dismissed`; it may be omitted when
+`note` is required for `confirmed` and `dismissed`; it may be omitted when
 setting `status` back to `open`. Pass `finalAction: "quarantine"` or
-`finalAction: "revoke"` with a triaged report to apply release moderation in the
+`finalAction: "revoke"` with a confirmed report to apply release moderation in the
 same auditable workflow.
 
 Response:
@@ -962,7 +962,7 @@ Response:
   "ok": true,
   "reportId": "packageReports:...",
   "packageId": "packages:...",
-  "status": "triaged",
+  "status": "confirmed",
   "reportCount": 0
 }
 ```

@@ -584,7 +584,7 @@ describe("skill artifact moderation", () => {
     );
   });
 
-  it("keeps hidden skill reports visible in the staff queue", async () => {
+  it("keeps hidden skill reports visible in the moderator queue", async () => {
     const result = await listSkillReportsInternalHandler(
       {
         db: {

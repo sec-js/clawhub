@@ -661,7 +661,7 @@ registerCommand(packageCmd, ["package", "triage-report"], "moderator")
   });
 
 registerCommand(packageCmd, ["package", "moderation-status"])
-  .description("Show owner/staff package moderation status")
+  .description("Show owner/moderator package moderation status")
   .argument("<name>", "Package name")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
