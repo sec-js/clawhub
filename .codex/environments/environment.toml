@@ -13,7 +13,7 @@ command = "bun run dev:worktree"
 [[actions]]
 name = "Convex Dev"
 icon = "tool"
-command = "bunx convex dev --typecheck=disable"
+command = "bun run setup:worktree -- --quiet && bunx convex dev --typecheck=disable"
 
 [[actions]]
 name = "Seed Dev DB"
