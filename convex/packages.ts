@@ -31,6 +31,7 @@ import {
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
+import { recordPackageModerationEvent } from "./lib/artifactModeration";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import {
@@ -204,6 +205,8 @@ type PackageReleaseModerationQueueDoc = Omit<Doc<"packageReleases">, "createdAt"
   createdAt?: number;
 };
 type PackageReportStatus = "open" | "triaged" | "dismissed";
+type PackageReportFinalAction = "none" | "quarantine" | "revoke";
+type PackageAppealFinalAction = "none" | "approve";
 type PackageModerationQueueItem = {
   packageId: Id<"packages">;
   releaseId: Id<"packageReleases">;
@@ -243,6 +246,7 @@ type PackageReportListItem = {
   triagedAt?: number | null;
   triagedBy?: Id<"users"> | null;
   triageNote?: string | null;
+  actionTaken?: PackageReportFinalAction | null;
 };
 type PackageAppealStatus = "open" | "accepted" | "rejected";
 type PackageAppealListItem = {
@@ -264,6 +268,7 @@ type PackageAppealListItem = {
   resolvedAt?: number | null;
   resolvedBy?: Id<"users"> | null;
   resolutionNote?: string | null;
+  actionTaken?: PackageAppealFinalAction | null;
 };
 type PackageOfficialMigrationListItem = {
   migrationId: Id<"officialPluginMigrations">;
@@ -2325,6 +2330,62 @@ export const moderatePackageReleaseForUserInternal = internalMutation({
   },
 });
 
+async function applyPackageReleaseModerationFinalAction(
+  ctx: MutationCtx,
+  params: {
+    actorUserId: Id<"users">;
+    pkg: Doc<"packages">;
+    release: Doc<"packageReleases">;
+    state: "approved" | "quarantined" | "revoked";
+    reason: string;
+    sourceKind: "report" | "appeal";
+    sourceId: Id<"packageReports"> | Id<"packageAppeals">;
+    now: number;
+  },
+) {
+  const reason = params.reason.trim();
+  if (!reason) throw new ConvexError("Moderation reason required");
+
+  const scanStatus = params.state === "approved" ? ("clean" as const) : ("malicious" as const);
+  const verification = params.release.verification
+    ? {
+        ...params.release.verification,
+        scanStatus,
+      }
+    : params.release.verification;
+  const patch: Partial<Doc<"packageReleases">> = {
+    manualModeration: {
+      state: params.state,
+      reason,
+      reviewerUserId: params.actorUserId,
+      updatedAt: params.now,
+    },
+    verification,
+  };
+
+  await ctx.db.patch(params.release._id, patch);
+  const updatedRelease = { ...params.release, ...patch } as Doc<"packageReleases">;
+  await syncLatestPackageVerification(ctx, updatedRelease);
+  await ctx.db.insert("auditLogs", {
+    actorUserId: params.actorUserId,
+    action: "package.release.moderation",
+    targetType: "packageRelease",
+    targetId: params.release._id,
+    metadata: {
+      packageId: params.pkg._id,
+      packageName: params.pkg.name,
+      version: params.release.version,
+      state: params.state,
+      reason,
+      sourceKind: params.sourceKind,
+      sourceId: params.sourceId,
+    },
+    createdAt: params.now,
+  });
+
+  return { state: params.state, scanStatus };
+}
+
 async function countActivePackageReportsForUser(ctx: MutationCtx, userId: Id<"users">) {
   const reports = await ctx.db
     .query("packageReports")
@@ -2407,17 +2468,25 @@ export const reportPackageForUserInternal = internalMutation({
           reportCount: nextReportCount,
           lastReportedAt: now,
         });
-        await ctx.db.insert("auditLogs", {
+        const eventMetadata = {
+          packageId: pkg._id,
+          packageName: pkg.name,
+          releaseId: release?._id ?? existing.releaseId ?? null,
+          version: release?.version ?? version ?? null,
+          reportCount: nextReportCount,
+        };
+        await recordPackageModerationEvent(ctx, {
+          kind: "report",
+          reportId: existing._id,
           actorUserId: actor._id,
           action: "package.report.reopen",
-          targetType: "package",
-          targetId: pkg._id,
-          metadata: {
+          timelineMetadata: eventMetadata,
+          auditAction: "package.report.reopen",
+          auditTargetType: "package",
+          auditTargetId: pkg._id,
+          auditMetadata: {
             reportId: existing._id,
-            packageName: pkg.name,
-            releaseId: release?._id ?? null,
-            version: release?.version ?? version ?? null,
-            reportCount: nextReportCount,
+            ...eventMetadata,
           },
           createdAt: now,
         });
@@ -2448,7 +2517,7 @@ export const reportPackageForUserInternal = internalMutation({
     }
 
     const now = Date.now();
-    await ctx.db.insert("packageReports", {
+    const reportId = await ctx.db.insert("packageReports", {
       packageId: pkg._id,
       ...(release ? { releaseId: release._id, version: release.version } : {}),
       userId: actor._id,
@@ -2463,16 +2532,25 @@ export const reportPackageForUserInternal = internalMutation({
       lastReportedAt: now,
     });
 
-    await ctx.db.insert("auditLogs", {
+    const eventMetadata = {
+      packageId: pkg._id,
+      packageName: pkg.name,
+      releaseId: release?._id ?? null,
+      version: release?.version ?? version ?? null,
+      reportCount: nextReportCount,
+    };
+    await recordPackageModerationEvent(ctx, {
+      kind: "report",
+      reportId,
       actorUserId: actor._id,
-      action: "package.report",
-      targetType: "package",
-      targetId: pkg._id,
-      metadata: {
-        packageName: pkg.name,
-        releaseId: release?._id ?? null,
-        version: release?.version ?? version ?? null,
-        reportCount: nextReportCount,
+      action: "package.report.submit",
+      timelineMetadata: eventMetadata,
+      auditAction: "package.report",
+      auditTargetType: "package",
+      auditTargetId: pkg._id,
+      auditMetadata: {
+        reportId,
+        ...eventMetadata,
       },
       createdAt: now,
     });
@@ -2512,6 +2590,7 @@ function toPackageReportListItem(
     triagedAt: report.triagedAt ?? null,
     triagedBy: report.triagedBy ?? null,
     triageNote: report.triageNote ?? null,
+    actionTaken: report.actionTaken ?? null,
   };
 }
 
@@ -2564,6 +2643,9 @@ export const triagePackageReportForUserInternal = internalMutation({
     reportId: v.id("packageReports"),
     status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
     note: v.optional(v.string()),
+    finalAction: v.optional(
+      v.union(v.literal("none"), v.literal("quarantine"), v.literal("revoke")),
+    ),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -2580,12 +2662,20 @@ export const triagePackageReportForUserInternal = internalMutation({
     const willBeOpen = args.status === "open";
     const note = args.note?.trim();
     if (!willBeOpen && !note) throw new ConvexError("Triage note required.");
+    const finalAction = args.finalAction ?? "none";
+    if (willBeOpen && finalAction !== "none") {
+      throw new ConvexError("Reopened reports cannot apply a final action.");
+    }
+    if (args.status === "dismissed" && finalAction !== "none") {
+      throw new ConvexError("Dismissed reports cannot apply a final action.");
+    }
 
     await ctx.db.patch(report._id, {
       status: args.status,
       triagedAt: willBeOpen ? undefined : now,
       triagedBy: willBeOpen ? undefined : actor._id,
       triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
+      actionTaken: willBeOpen ? undefined : finalAction,
     });
 
     let reportCount = pkg.reportCount ?? 0;
@@ -2598,17 +2688,46 @@ export const triagePackageReportForUserInternal = internalMutation({
       });
     }
 
-    await ctx.db.insert("auditLogs", {
+    let moderatedRelease: Doc<"packageReleases"> | null = null;
+    if (finalAction !== "none") {
+      const releaseId = report.releaseId ?? pkg.latestReleaseId;
+      if (!releaseId) throw new ConvexError("Package report has no release to moderate");
+      const release = await ctx.db.get(releaseId);
+      if (!release || release.softDeletedAt) {
+        throw new ConvexError("Package report release not found");
+      }
+      moderatedRelease = release;
+      await applyPackageReleaseModerationFinalAction(ctx, {
+        actorUserId: actor._id,
+        pkg,
+        release,
+        state: finalAction === "quarantine" ? "quarantined" : "revoked",
+        reason: note ?? "",
+        sourceKind: "report",
+        sourceId: report._id,
+        now,
+      });
+    }
+
+    const eventMetadata = {
+      packageId: pkg._id,
+      packageName: pkg.name,
+      status: args.status,
+      finalAction,
+      releaseId: moderatedRelease?._id ?? report.releaseId ?? null,
+      version: moderatedRelease?.version ?? report.version ?? null,
+      reportCount,
+    };
+    await recordPackageModerationEvent(ctx, {
+      kind: "report",
+      reportId: report._id,
       actorUserId: actor._id,
       action: "package.report.triage",
-      targetType: "packageReport",
-      targetId: report._id,
-      metadata: {
-        packageId: pkg._id,
-        packageName: pkg.name,
-        status: args.status,
-        reportCount,
-      },
+      timelineMetadata: eventMetadata,
+      auditAction: "package.report.triage",
+      auditTargetType: "packageReport",
+      auditTargetId: report._id,
+      auditMetadata: eventMetadata,
       createdAt: now,
     });
 
@@ -2618,6 +2737,7 @@ export const triagePackageReportForUserInternal = internalMutation({
       packageId: pkg._id,
       status: args.status,
       reportCount,
+      actionTaken: finalAction,
     };
   },
 });
@@ -2746,19 +2866,24 @@ export const submitPackageAppealForUserInternal = internalMutation({
       createdAt: now,
     });
 
-    await ctx.db.insert("auditLogs", {
+    const eventMetadata = {
+      packageId: pkg._id,
+      releaseId: release._id,
+      packageName: pkg.name,
+      version: release.version,
+      moderationState,
+      scanStatus,
+    };
+    await recordPackageModerationEvent(ctx, {
+      kind: "appeal",
+      appealId,
       actorUserId: actor._id,
       action: "package.appeal.submit",
-      targetType: "packageAppeal",
-      targetId: appealId,
-      metadata: {
-        packageId: pkg._id,
-        releaseId: release._id,
-        packageName: pkg.name,
-        version: release.version,
-        moderationState,
-        scanStatus,
-      },
+      timelineMetadata: eventMetadata,
+      auditAction: "package.appeal.submit",
+      auditTargetType: "packageAppeal",
+      auditTargetId: appealId,
+      auditMetadata: eventMetadata,
       createdAt: now,
     });
 
@@ -2798,6 +2923,7 @@ function toPackageAppealListItem(
     resolvedAt: appeal.resolvedAt ?? null,
     resolvedBy: appeal.resolvedBy ?? null,
     resolutionNote: appeal.resolutionNote ?? null,
+    actionTaken: appeal.actionTaken ?? null,
   };
 }
 
@@ -2850,6 +2976,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
     appealId: v.id("packageAppeals"),
     status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
     note: v.optional(v.string()),
+    finalAction: v.optional(v.union(v.literal("none"), v.literal("approve"))),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -2864,6 +2991,13 @@ export const resolvePackageAppealForUserInternal = internalMutation({
     const note = args.note?.trim();
     const isOpen = args.status === "open";
     if (!isOpen && !note) throw new ConvexError("Resolution note required.");
+    const finalAction = args.finalAction ?? "none";
+    if (isOpen && finalAction !== "none") {
+      throw new ConvexError("Reopened appeals cannot apply a final action.");
+    }
+    if (args.status === "rejected" && finalAction !== "none") {
+      throw new ConvexError("Rejected appeals cannot apply a final action.");
+    }
     const now = Date.now();
 
     await ctx.db.patch(appeal._id, {
@@ -2871,20 +3005,43 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       resolvedAt: isOpen ? undefined : now,
       resolvedBy: isOpen ? undefined : actor._id,
       resolutionNote: isOpen ? undefined : note?.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
+      actionTaken: isOpen ? undefined : finalAction,
     });
 
-    await ctx.db.insert("auditLogs", {
+    if (finalAction === "approve") {
+      const release = await ctx.db.get(appeal.releaseId);
+      if (!release || release.softDeletedAt)
+        throw new ConvexError("Package appeal release not found");
+      await applyPackageReleaseModerationFinalAction(ctx, {
+        actorUserId: actor._id,
+        pkg,
+        release,
+        state: "approved",
+        reason: note ?? "",
+        sourceKind: "appeal",
+        sourceId: appeal._id,
+        now,
+      });
+    }
+
+    const eventMetadata = {
+      packageId: pkg._id,
+      releaseId: appeal.releaseId,
+      packageName: pkg.name,
+      version: appeal.version,
+      status: args.status,
+      finalAction,
+    };
+    await recordPackageModerationEvent(ctx, {
+      kind: "appeal",
+      appealId: appeal._id,
       actorUserId: actor._id,
       action: "package.appeal.resolve",
-      targetType: "packageAppeal",
-      targetId: appeal._id,
-      metadata: {
-        packageId: pkg._id,
-        releaseId: appeal.releaseId,
-        packageName: pkg.name,
-        version: appeal.version,
-        status: args.status,
-      },
+      timelineMetadata: eventMetadata,
+      auditAction: "package.appeal.resolve",
+      auditTargetType: "packageAppeal",
+      auditTargetId: appeal._id,
+      auditMetadata: eventMetadata,
       createdAt: now,
     });
 
@@ -2894,7 +3051,39 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       packageId: pkg._id,
       releaseId: appeal.releaseId,
       status: args.status,
+      actionTaken: finalAction,
     };
+  },
+});
+
+export const listPackageModerationEventsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    kind: v.union(v.literal("report"), v.literal("appeal")),
+    reportId: v.optional(v.id("packageReports")),
+    appealId: v.optional(v.id("packageAppeals")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 50), 100));
+    if (args.kind === "report") {
+      if (!args.reportId) throw new ConvexError("reportId required");
+      return await ctx.db
+        .query("packageModerationEvents")
+        .withIndex("by_report_createdAt", (q) => q.eq("reportId", args.reportId))
+        .order("asc")
+        .take(limit);
+    }
+    if (!args.appealId) throw new ConvexError("appealId required");
+    return await ctx.db
+      .query("packageModerationEvents")
+      .withIndex("by_appeal_createdAt", (q) => q.eq("appealId", args.appealId))
+      .order("asc")
+      .take(limit);
   },
 });
 

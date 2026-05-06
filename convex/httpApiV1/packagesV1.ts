@@ -1518,6 +1518,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       ) as {
         status: "open" | "triaged" | "dismissed";
         note?: string;
+        finalAction?: "none" | "quarantine" | "revoke";
       };
       const result = await runMutationRef(
         ctx,
@@ -1527,6 +1528,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
           reportId: segments[1] as Id<"packageReports">,
           status: body.status,
           ...(body.note ? { note: body.note } : {}),
+          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
         },
       );
       return json(result, 200, rate.headers);
@@ -1558,6 +1560,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       ) as {
         status: "open" | "accepted" | "rejected";
         note?: string;
+        finalAction?: "none" | "approve";
       };
       const result = await runMutationRef(
         ctx,
@@ -1567,6 +1570,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
           appealId: segments[1] as Id<"packageAppeals">,
           status: body.status,
           ...(body.note ? { note: body.note } : {}),
+          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
         },
       );
       return json(result, 200, rate.headers);

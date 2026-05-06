@@ -233,6 +233,135 @@ Notes:
 - Public callers only get `200` for already-flagged visible skills.
 - Evidence is redacted for public callers and only includes raw snippets for owners/staff.
 
+### `POST /api/v1/skills/{slug}/report`
+
+Report a skill for moderator review. Reports are skill-level, optionally linked
+to a version, and feed the skill report queue.
+
+Auth:
+
+- Requires an API token.
+
+Request:
+
+```json
+{ "reason": "Suspicious install step", "version": "1.2.3" }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "reported": true,
+  "alreadyReported": false,
+  "reportId": "skillReports:...",
+  "skillId": "skills:...",
+  "reportCount": 1
+}
+```
+
+### `POST /api/v1/skills/{slug}/appeal`
+
+Skill owner/publisher endpoint for appealing moderation on a skill.
+
+Auth:
+
+- Requires an API token for the skill owner or publisher member.
+
+Request:
+
+```json
+{ "version": "1.2.3", "message": "The flagged command is documented setup." }
+```
+
+Appeals are accepted for hidden, removed, suspicious, malicious, or
+scanner-flagged skill outcomes. ClawHub keeps one open appeal per skill.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "submitted": true,
+  "alreadyOpen": false,
+  "appealId": "skillAppeals:...",
+  "skillId": "skills:...",
+  "status": "open"
+}
+```
+
+### `GET /api/v1/skills/-/reports`
+
+Moderator/admin endpoint for skill report intake.
+
+Query params:
+
+- `status` (optional): `open` (default), `triaged`, `dismissed`, or `all`
+- `limit` (optional): integer (1-200)
+- `cursor` (optional): pagination cursor
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "reportId": "skillReports:...",
+      "skillId": "skills:...",
+      "skillVersionId": "skillVersions:...",
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "version": "1.2.3",
+      "reason": "Suspicious install step",
+      "status": "open",
+      "createdAt": 1730000000000,
+      "reporter": {
+        "userId": "users:...",
+        "handle": "reporter",
+        "displayName": "Reporter"
+      },
+      "triagedAt": null,
+      "triagedBy": null,
+      "triageNote": null
+    }
+  ],
+  "nextCursor": null,
+  "done": true
+}
+```
+
+### `POST /api/v1/skills/-/reports/{reportId}/triage`
+
+Moderator/admin endpoint for resolving or reopening skill reports.
+
+Request:
+
+```json
+{ "status": "triaged", "note": "Reviewed and hid affected version.", "finalAction": "hide" }
+```
+
+`note` is required for `triaged` and `dismissed`; it may be omitted when
+setting `status` back to `open`. Pass `finalAction: "hide"` with a triaged
+report to hide the skill in the same auditable workflow.
+
+### `GET /api/v1/skills/-/appeals`
+
+Moderator/admin endpoint for skill appeal intake.
+
+Query params:
+
+- `status` (optional): `open` (default), `accepted`, `rejected`, or `all`
+- `limit` (optional): integer (1-200)
+- `cursor` (optional): pagination cursor
+
+### `POST /api/v1/skills/-/appeals/{appealId}/resolve`
+
+Moderator/admin endpoint for accepting, rejecting, or reopening a skill appeal.
+`note` is required for `accepted` and `rejected`; it may be omitted when setting
+`status` back to `open`. Pass `finalAction: "restore"` with an accepted appeal
+to make the skill available again.
+
 ### `GET /api/v1/skills/{slug}/versions`
 
 Query params:
@@ -705,13 +834,12 @@ Moderator/admin endpoint for accepting, rejecting, or reopening an appeal.
 Request:
 
 ```json
-{ "status": "rejected", "note": "Static finding still applies." }
+{ "status": "accepted", "note": "False positive confirmed.", "finalAction": "approve" }
 ```
 
 `note` is required for `accepted` and `rejected`; it may be omitted when
-setting `status` back to `open`. Resolving an appeal does not automatically
-change release moderation state; use release moderation to approve, quarantine,
-or revoke the artifact.
+setting `status` back to `open`. Pass `finalAction: "approve"` with an accepted
+appeal to approve the affected release in the same auditable workflow.
 
 Response:
 
@@ -815,11 +943,17 @@ Moderator/admin endpoint for resolving or reopening package reports.
 Request:
 
 ```json
-{ "status": "triaged", "note": "Reviewed and quarantined affected release." }
+{
+  "status": "triaged",
+  "note": "Reviewed and quarantined affected release.",
+  "finalAction": "quarantine"
+}
 ```
 
 `note` is required for `triaged` and `dismissed`; it may be omitted when
-setting `status` back to `open`.
+setting `status` back to `open`. Pass `finalAction: "quarantine"` or
+`finalAction: "revoke"` with a triaged report to apply release moderation in the
+same auditable workflow.
 
 Response:
 

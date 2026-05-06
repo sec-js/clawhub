@@ -36,6 +36,7 @@ import {
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageAppealListStatus,
+  type PackageAppealFinalAction,
   type PackageAppealStatus,
   type PackageCapabilitySummary,
   type PackageCompatibility,
@@ -44,6 +45,7 @@ import {
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
   type PackageReportListStatus,
+  type PackageReportFinalAction,
   type PackageReportStatus,
   type PackageReleaseModerationState,
   type PackageTrustedPublisher,
@@ -170,6 +172,8 @@ type PackageAppealListOptions = {
 
 type PackageAppealResolveOptions = {
   status?: PackageAppealStatus;
+  action?: PackageAppealFinalAction;
+  finalAction?: PackageAppealFinalAction;
   note?: string;
   json?: boolean;
 };
@@ -183,6 +187,8 @@ type PackageReportListOptions = {
 
 type PackageReportTriageOptions = {
   status?: PackageReportStatus;
+  action?: PackageReportFinalAction;
+  finalAction?: PackageReportFinalAction;
   note?: string;
   json?: boolean;
 };
@@ -1238,6 +1244,12 @@ export async function cmdResolvePackageAppeal(
   if (!status || !["open", "accepted", "rejected"].includes(status)) {
     fail("--status must be open, accepted, or rejected");
   }
+  const finalAction = (options.finalAction ?? options.action)?.trim() as
+    | PackageAppealFinalAction
+    | undefined;
+  if (finalAction && !["none", "approve"].includes(finalAction)) {
+    fail("--action must be none or approve");
+  }
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
 
@@ -1254,6 +1266,7 @@ export async function cmdResolvePackageAppeal(
         body: {
           status,
           ...(note ? { note } : {}),
+          ...(finalAction ? { finalAction } : {}),
         },
       },
       ApiV1PackageAppealResolveResponseSchema,
@@ -1263,7 +1276,9 @@ export async function cmdResolvePackageAppeal(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
-    console.log(`OK. Appeal ${trimmed} set to ${result.status}.`);
+    const actionSuffix =
+      result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
+    console.log(`OK. Appeal ${trimmed} set to ${result.status}${actionSuffix}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
@@ -1329,6 +1344,12 @@ export async function cmdTriagePackageReport(
   if (!status || !["open", "triaged", "dismissed"].includes(status)) {
     fail("--status must be open, triaged, or dismissed");
   }
+  const finalAction = (options.finalAction ?? options.action)?.trim() as
+    | PackageReportFinalAction
+    | undefined;
+  if (finalAction && !["none", "quarantine", "revoke"].includes(finalAction)) {
+    fail("--action must be none, quarantine, or revoke");
+  }
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
 
@@ -1345,6 +1366,7 @@ export async function cmdTriagePackageReport(
         body: {
           status,
           ...(note ? { note } : {}),
+          ...(finalAction ? { finalAction } : {}),
         },
       },
       ApiV1PackageReportTriageResponseSchema,
@@ -1354,7 +1376,9 @@ export async function cmdTriagePackageReport(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
-    console.log(`OK. Report ${trimmed} set to ${result.status}.`);
+    const actionSuffix =
+      result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
+    console.log(`OK. Report ${trimmed} set to ${result.status}${actionSuffix}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

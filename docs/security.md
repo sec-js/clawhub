@@ -19,6 +19,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Reporting + auto-hide
 
 - Reports are unique per user + target (skill/comment/package).
+- Artifact moderation is intentionally separate from trust/identity governance:
+  skill and package/plugin reports and appeals are artifact moderation; org
+  claims, namespace disputes, verification, and official status are handled by
+  the trust/identity governance process.
+- A report is a user/community complaint about an artifact. An appeal is an
+  owner or publisher challenge to a moderation outcome.
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
 - Per-user cap: 20 **active** reports.
   - Active skill report = skill exists, not soft-deleted, not `moderationStatus = removed`,
@@ -38,22 +44,34 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
-- Package reports feed `package moderation-queue` and audit `package.report`,
-  but do not auto-hide or block downloads. Moderators must explicitly approve,
-  quarantine, or revoke package releases.
+- Package reports feed `package moderation-queue` and audit `package.report`.
+  Moderators can triage a formal report with an explicit final action to
+  quarantine or revoke the affected release.
 - Package reports can be moved to `triaged` or `dismissed` with a moderator
   note. Only `open` reports count toward `packages.reportCount` and user active
   report limits; triaging a report decrements the open count.
+- Skill reports now follow the same formal lifecycle: `open`, `triaged`, or
+  `dismissed`, with a single recorded `triageNote` used as the official outcome
+  note. Moderators can triage a formal report with an explicit final action to
+  hide the affected skill. Skill report and appeal timelines are stored in
+  `skillModerationEvents`.
 - Package owners and publisher members can read package moderation status via
   API/CLI, including open report count, latest release moderation state, and
   download-block reasons. Reporter identities and report bodies remain staff
   intake data.
 - Package owners and publisher members can submit one open appeal per moderated
-  package release. Appeals are audit-logged and do not automatically approve or
-  unblock a release.
+  package release. Accepted appeals can explicitly approve the affected release
+  in the same auditable workflow.
+- Skill owners and publisher members can submit one open appeal for hidden,
+  removed, suspicious, malicious, or scanner-flagged skill outcomes. Skill
+  appeals use `open`, `accepted`, and `rejected` states with a single
+  `resolutionNote` as the official outcome note.
 - Moderators can accept, reject, or reopen appeals with a resolution note.
-  Appeal resolution is audit-logged and intentionally separate from changing
-  release moderation state.
+  Accepted skill appeals can explicitly restore the skill, and accepted package
+  appeals can explicitly approve the release.
+- `auditLogs` remains the global compliance/security ledger. Product-facing
+  moderation timelines live in `skillModerationEvents` and
+  `packageModerationEvents`.
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
