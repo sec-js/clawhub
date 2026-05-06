@@ -38,12 +38,12 @@ describe("top-level slug route loader", () => {
     resolveTopLevelSlugRouteMock.mockResolvedValue({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/%40openclaw%2Fcodex",
+      href: "/plugins/@openclaw/codex",
     });
 
     expect(await runLoader("codex")).toEqual({
       redirect: {
-        href: "/plugins/%40openclaw%2Fcodex",
+        href: "/plugins/@openclaw/codex",
         replace: true,
       },
     });

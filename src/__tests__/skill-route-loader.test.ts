@@ -112,12 +112,12 @@ describe("skill route loader", () => {
     resolveOpenClawPluginSlugMock.mockResolvedValue({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/%40openclaw%2Fcodex",
+      href: "/plugins/@openclaw/codex",
     });
 
     expect(await runLoader({ owner: "openclaw", slug: "codex" })).toEqual({
       redirect: {
-        href: "/plugins/%40openclaw%2Fcodex",
+        href: "/plugins/@openclaw/codex",
         replace: true,
       },
     });
@@ -129,12 +129,12 @@ describe("skill route loader", () => {
     resolveOpenClawPluginSlugMock.mockResolvedValue({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/%40openclaw%2Fcodex",
+      href: "/plugins/@openclaw/codex",
     });
 
     expect(await runLoader({ owner: "@openclaw", slug: "codex" })).toEqual({
       redirect: {
-        href: "/plugins/%40openclaw%2Fcodex",
+        href: "/plugins/@openclaw/codex",
         replace: true,
       },
     });

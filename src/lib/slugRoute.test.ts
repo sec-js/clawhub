@@ -17,7 +17,7 @@ describe("slug route resolution", () => {
     await expect(resolveTopLevelSlugRoute("codex")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/%40openclaw%2Fcodex",
+      href: "/plugins/@openclaw/codex",
     });
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
@@ -26,13 +26,13 @@ describe("slug route resolution", () => {
     await expect(resolveTopLevelSlugRoute("anthropic")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/anthropic-provider",
-      href: "/plugins/%40openclaw%2Fanthropic-provider",
+      href: "/plugins/@openclaw/anthropic-provider",
     });
 
     await expect(resolveOpenClawPluginSlug("kimi-coding", "openclaw")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/kimi-provider",
-      href: "/plugins/%40openclaw%2Fkimi-provider",
+      href: "/plugins/@openclaw/kimi-provider",
     });
 
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
@@ -42,7 +42,7 @@ describe("slug route resolution", () => {
     await expect(resolveOpenClawPluginSlug("codex", "@openclaw")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/%40openclaw%2Fcodex",
+      href: "/plugins/@openclaw/codex",
     });
   });
 

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, ExternalLink, Download } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -28,6 +28,11 @@ import {
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
+import {
+  buildPluginDetailHref,
+  buildPluginSecurityBaseHref,
+  parseScopedPackageName,
+} from "../../lib/pluginRoutes";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -35,88 +40,111 @@ type PluginDetailRateLimitState = {
   retryAfterSeconds: number | null;
 } | null;
 
-type PluginDetailLoaderData = {
+export type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
 
-export const Route = createFileRoute("/plugins/$name")({
-  loader: async ({ params }): Promise<PluginDetailLoaderData> => {
-    const requestedName = params.name;
-    const candidateNames = getOpenClawPackageCandidateNames(requestedName);
+export async function loadPluginDetail(requestedName: string): Promise<PluginDetailLoaderData> {
+  const candidateNames = getOpenClawPackageCandidateNames(requestedName);
 
-    let resolvedName = requestedName;
-    let detail: PackageDetailResponse = { package: null, owner: null };
+  let resolvedName = requestedName;
+  let detail: PackageDetailResponse = { package: null, owner: null };
 
-    for (const candidateName of candidateNames) {
-      let candidateDetail: PackageDetailResponse;
-      try {
-        candidateDetail = await fetchPackageDetail(candidateName);
-      } catch (error) {
-        if (isRateLimitedPackageApiError(error)) {
-          return {
-            detail: { package: null, owner: null },
-            version: null,
-            readme: null,
-            rateLimited: {
-              scope: "detail",
-              retryAfterSeconds: error.retryAfterSeconds,
-            },
-          };
-        }
-        throw error;
-      }
-      if (candidateDetail.package) {
-        detail = candidateDetail;
-        resolvedName = candidateName;
-        break;
-      }
-      detail = candidateDetail;
-    }
-
-    if (!detail.package) {
-      return { detail, version: null, readme: null, rateLimited: null };
-    }
-
+  for (const candidateName of candidateNames) {
+    let candidateDetail: PackageDetailResponse;
     try {
-      const [version, readme] = await Promise.all([
-        detail.package.latestVersion
-          ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
-          : Promise.resolve(null),
-        fetchPackageReadme(resolvedName),
-      ]);
-
-      return { detail, version, readme, rateLimited: null };
+      candidateDetail = await fetchPackageDetail(candidateName);
     } catch (error) {
       if (isRateLimitedPackageApiError(error)) {
         return {
-          detail,
+          detail: { package: null, owner: null },
           version: null,
           readme: null,
           rateLimited: {
-            scope: "metadata",
+            scope: "detail",
             retryAfterSeconds: error.retryAfterSeconds,
           },
         };
       }
       throw error;
     }
-  },
-  head: ({ params, loaderData }) => ({
+    if (candidateDetail.package) {
+      detail = candidateDetail;
+      resolvedName = candidateName;
+      break;
+    }
+    detail = candidateDetail;
+  }
+
+  if (!detail.package) {
+    return { detail, version: null, readme: null, rateLimited: null };
+  }
+
+  try {
+    const [version, readme] = await Promise.all([
+      detail.package.latestVersion
+        ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
+        : Promise.resolve(null),
+      fetchPackageReadme(resolvedName),
+    ]);
+
+    return { detail, version, readme, rateLimited: null };
+  } catch (error) {
+    if (isRateLimitedPackageApiError(error)) {
+      return {
+        detail,
+        version: null,
+        readme: null,
+        rateLimited: {
+          scope: "metadata",
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+      };
+    }
+    throw error;
+  }
+}
+
+export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderData) {
+  return {
     meta: [
       {
         title: loaderData?.detail.package?.displayName
           ? `${loaderData.detail.package.displayName} · Plugins`
-          : params.name,
+          : name,
       },
       {
         name: "description",
-        content: loaderData?.detail.package?.summary ?? `Plugin ${params.name}`,
+        content: loaderData?.detail.package?.summary ?? `Plugin ${name}`,
       },
     ],
-  }),
+  };
+}
+
+export const Route = createFileRoute("/plugins/$name")({
+  beforeLoad: ({ location, params }) => {
+    if (parseScopedPackageName(params.name)) {
+      const encodedSecurityPrefix = `/plugins/${encodeURIComponent(params.name)}/security/`;
+      if (location.pathname.startsWith(encodedSecurityPrefix)) {
+        throw redirect({
+          href: `${buildPluginSecurityBaseHref(params.name)}/${location.pathname.slice(
+            encodedSecurityPrefix.length,
+          )}`,
+          statusCode: 308,
+        });
+      }
+
+      throw redirect({
+        href: buildPluginDetailHref(params.name),
+        statusCode: 308,
+      });
+    }
+  },
+  loader: async ({ params }) => loadPluginDetail(params.name),
+  head: ({ params, loaderData }) => pluginDetailHead(params.name, loaderData),
   component: PluginDetailRoute,
 });
 
@@ -194,8 +222,22 @@ function isEmptyObject(obj: unknown): boolean {
 }
 
 function PluginDetailRoute() {
-  const { name } = Route.useParams();
-  const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
+  return (
+    <PluginDetailPage
+      name={Route.useParams().name}
+      loaderData={Route.useLoaderData() as PluginDetailLoaderData}
+    />
+  );
+}
+
+export function PluginDetailPage({
+  name,
+  loaderData,
+}: {
+  name: string;
+  loaderData: PluginDetailLoaderData;
+}) {
+  const { detail, version, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { isAuthenticated } = useAuthStatus();
   const requestPluginRescan = useMutation(api.packages.requestRescan);
@@ -376,7 +418,7 @@ function PluginDetailRoute() {
           <div className="skill-hero-action-grid">
             {latestRelease ? (
               <DetailSecuritySummary
-                scannerBasePath={`/plugins/${encodeURIComponent(name)}/security`}
+                scannerBasePath={buildPluginSecurityBaseHref(name)}
                 sha256hash={latestRelease.sha256hash ?? null}
                 vtAnalysis={latestRelease.vtAnalysis ?? null}
                 llmAnalysis={latestRelease.llmAnalysis ?? null}

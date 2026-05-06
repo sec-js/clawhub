@@ -1,4 +1,5 @@
 import { getOpenClawExtensionPackageName } from "./openClawExtensionSlugs";
+import { buildPluginDetailHref } from "./pluginRoutes";
 import { fetchSkillPageData } from "./skillPage";
 
 const OPENCLAW_HANDLE = "openclaw";
@@ -16,10 +17,6 @@ export type SlugRouteTarget =
     };
 
 type PluginSlugRouteTarget = Extract<SlugRouteTarget, { kind: "plugin" }>;
-
-export function buildPluginDetailHref(name: string) {
-  return `/plugins/${encodeURIComponent(name)}`;
-}
 
 function normalizeSlug(slug: string) {
   return slug.trim().toLowerCase();
