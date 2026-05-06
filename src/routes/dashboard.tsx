@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
-import { Clock, Info, Loader2, MoreVertical, Plus, RotateCw, Settings } from "lucide-react";
+import { Clock, Info, Loader2, MoreVertical, Plus, RotateCw, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -13,6 +13,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
@@ -474,7 +475,9 @@ function RowMenu({
 }) {
   const requestSkillRescan = useMutation(api.skills.requestRescan);
   const requestPluginRescan = useMutation(api.packages.requestRescan);
+  const deletePackage = useMutation(api.packages.softDeletePackage);
   const [isRequesting, setIsRequesting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const isScanInProgress = Boolean(rescanState?.inProgressRequest);
   const showRescan = canShowDashboardRescan(statusLabel, rescanState);
   const showRescanItem = showRescan || isScanInProgress;
@@ -498,6 +501,24 @@ function RowMenu({
       toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
     } finally {
       setIsRequesting(false);
+    }
+  }
+
+  async function deletePlugin() {
+    if (kind !== "plugin" || isDeleting) return;
+    const confirmed = window.confirm(
+      `Delete ${targetLabel}? This removes the plugin package and all releases from ClawHub.`,
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await deletePackage({ packageId: targetId as Doc<"packages">["_id"] });
+      toast.success(`Deleted ${targetLabel}.`);
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Could not delete this plugin."));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -536,6 +557,19 @@ function RowMenu({
               />
               {rescanLabel}
             </DropdownMenuItem>
+          ) : null}
+          {kind === "plugin" ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={isDeleting}
+                variant="destructive"
+                onSelect={() => void deletePlugin()}
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                {isDeleting ? "Deleting..." : "Delete plugin"}
+              </DropdownMenuItem>
+            </>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>

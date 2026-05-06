@@ -351,6 +351,15 @@ Notes:
 - Skills can also resolve through this route in the unified catalog.
 - Private packages return `404` unless the caller can read the owning publisher.
 
+### `DELETE /api/v1/packages/{name}`
+
+Soft-deletes a package and all releases.
+
+Notes:
+
+- Requires an API token for the package owner, an org publisher owner/admin,
+  platform moderator, or platform admin.
+
 ### `GET /api/v1/packages/{name}/versions`
 
 Returns version history.

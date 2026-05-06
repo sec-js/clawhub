@@ -45,6 +45,7 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
+import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
@@ -2084,6 +2085,46 @@ export const insertAuditLogInternal = internalMutation({
   },
 });
 
+async function softDeletePackageDoc(ctx: Pick<MutationCtx, "db">, pkg: Doc<"packages">) {
+  if (pkg.softDeletedAt) {
+    return {
+      ok: true as const,
+      packageId: pkg._id,
+      releaseCount: 0,
+      alreadyDeleted: true as const,
+    };
+  }
+
+  const now = Date.now();
+  const releases = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  let releaseCount = 0;
+  for (const release of releases) {
+    if (release.softDeletedAt) continue;
+    await ctx.db.patch(release._id, { softDeletedAt: now });
+    releaseCount += 1;
+  }
+
+  const packagePatch = {
+    softDeletedAt: now,
+    updatedAt: now,
+  };
+  await ctx.db.patch(pkg._id, packagePatch);
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(pkg),
+    ...packagePatch,
+  });
+
+  return {
+    ok: true as const,
+    packageId: pkg._id,
+    releaseCount,
+    alreadyDeleted: false as const,
+  };
+}
+
 export const softDeletePackageInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -2099,42 +2140,38 @@ export const softDeletePackageInternal = internalMutation({
     const pkg = await getPackageByNormalizedName(ctx, normalizedName);
     if (!pkg) throw new Error("Package not found");
 
-    if (pkg.ownerUserId !== args.userId) {
-      assertModerator(user);
+    if (user.role !== "moderator" && user.role !== "admin") {
+      await assertCanManageOwnedResource(ctx, {
+        actor: user,
+        ownerUserId: pkg.ownerUserId,
+        ownerPublisherId: pkg.ownerPublisherId,
+        allowedPublisherRoles: ["admin"],
+      });
     }
 
-    if (pkg.softDeletedAt) {
-      return {
-        ok: true as const,
-        packageId: pkg._id,
-        releaseCount: 0,
-        alreadyDeleted: true as const,
-      };
+    return await softDeletePackageDoc(ctx, pkg);
+  },
+});
+
+export const softDeletePackage = mutation({
+  args: {
+    packageId: v.id("packages"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg) throw new ConvexError("Package not found");
+
+    if (user.role !== "moderator" && user.role !== "admin") {
+      await assertCanManageOwnedResource(ctx, {
+        actor: user,
+        ownerUserId: pkg.ownerUserId,
+        ownerPublisherId: pkg.ownerPublisherId,
+        allowedPublisherRoles: ["admin"],
+      });
     }
 
-    const now = Date.now();
-    const releases = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
-      .collect();
-    let releaseCount = 0;
-    for (const release of releases) {
-      if (release.softDeletedAt) continue;
-      await ctx.db.patch(release._id, { softDeletedAt: now });
-      releaseCount += 1;
-    }
-
-    await ctx.db.patch(pkg._id, {
-      softDeletedAt: now,
-      updatedAt: now,
-    });
-
-    return {
-      ok: true as const,
-      packageId: pkg._id,
-      releaseCount,
-      alreadyDeleted: false as const,
-    };
+    return await softDeletePackageDoc(ctx, pkg);
   },
 });
 

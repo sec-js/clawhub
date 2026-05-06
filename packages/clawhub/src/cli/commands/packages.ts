@@ -10,6 +10,7 @@ import { parseClawPack } from "../../clawpack.js";
 import { apiRequest, apiRequestForm, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
+  ApiV1DeleteResponseSchema,
   ApiV1PackageArtifactBackfillResponseSchema,
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageAppealResponseSchema,
@@ -54,7 +55,7 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError } from "../ui.js";
+import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 import {
   fetchGitHubSource,
   normalizeGitHubRepo,
@@ -246,6 +247,11 @@ type PackageTrustedPublisherSetOptions = {
 };
 
 type PackageTrustedPublisherDeleteOptions = {
+  json?: boolean;
+};
+
+type PackageDeleteOptions = {
+  yes?: boolean;
   json?: boolean;
 };
 
@@ -1002,6 +1008,45 @@ export async function cmdVerifyPackage(
     }
   } catch (error) {
     spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdDeletePackage(
+  opts: GlobalOpts,
+  nameArg: string,
+  options: PackageDeleteOptions = {},
+  inputAllowed = true,
+) {
+  const name = nameArg.trim();
+  if (!name) fail("Package name required");
+
+  if (!options.yes) {
+    if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(`Delete ${name}? (soft delete package and all releases)`);
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner(`Deleting ${name}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "DELETE",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}`,
+        token,
+      },
+      ApiV1DeleteResponseSchema,
+    );
+    spinner.succeed(`OK. Deleted ${name}`);
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    }
+    return result;
+  } catch (error) {
+    spinner.fail(formatError(error));
     throw error;
   }
 }

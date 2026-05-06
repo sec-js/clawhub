@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -94,7 +94,7 @@ type TestPackage = {
     versions: number;
   };
   verification: null;
-  scanStatus: "suspicious" | "malicious";
+  scanStatus: "clean" | "suspicious" | "malicious";
   latestRelease: {
     version: string;
     createdAt: number;
@@ -280,6 +280,18 @@ describe("Dashboard minimal rows", () => {
     expect(screen.queryByRole("link", { name: /new version/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /new release/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /^view$/i })).toBeNull();
+  });
+
+  it("exposes package delete from the plugin row action menu", () => {
+    arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
+
+    renderDashboard();
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
+    );
+
+    expect(screen.getByRole("menuitem", { name: /delete plugin/i })).toBeTruthy();
   });
 
   it("does not render column titles, scanner details, or plugin metadata chips", () => {
