@@ -11,10 +11,7 @@ type Options = {
   seedOnly: boolean;
 };
 
-const DEFAULT_ENV_SOURCES = [
-  ".env.local",
-  "/Users/patrickerichsen/Git/openclaw/clawhub/.env.local",
-];
+const DEFAULT_ENV_SOURCES = [".env.local"];
 const CONVEX_START_TIMEOUT_MS = 120_000;
 const REACHABILITY_POLL_MS = 500;
 const managedChildren = new Set<ChildProcess>();
@@ -173,7 +170,7 @@ async function main() {
   const envFile = findEnvFile(options.envFile);
   if (!envFile) {
     console.error(
-      "Could not find .env.local. Pass --env-file <path> or set CLAWHUB_ENV_FILE to the canonical checkout env.",
+      "Could not find .env.local. Pass --env-file <path> or set CLAWHUB_ENV_FILE to a shared local env file.",
     );
     process.exit(1);
   }

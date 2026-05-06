@@ -81,13 +81,15 @@ For detached Codex worktrees or sibling worktrees, use the worktree helper:
 bun run dev:worktree
 ```
 
-It installs missing dependencies, loads `.env.local` from the current checkout or the canonical
-`/Users/patrickerichsen/Git/openclaw/clawhub/.env.local`, starts local Convex when the configured
+It installs missing dependencies, loads `.env.local`, starts local Convex when the configured
 backend is not already reachable, and then starts the preview server. Override the env source or port with:
 
 ```bash
 bun run dev:worktree -- --env-file /path/to/.env.local --port 3001
 ```
+
+You can also set `CLAWHUB_ENV_FILE=/path/to/.env.local` if your Codex worktrees should share a
+local env file outside the worktree.
 
 Codex app worktrees use the checked-in `.codex/environments/environment.toml` local environment.
 When you start a new Codex worktree with this local environment, Codex runs `bun install` first.
