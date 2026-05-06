@@ -2140,7 +2140,9 @@ export const softDeletePackageInternal = internalMutation({
     const pkg = await getPackageByNormalizedName(ctx, normalizedName);
     if (!pkg) throw new Error("Package not found");
 
-    if (user.role !== "moderator" && user.role !== "admin") {
+    if (user.role === "moderator" || user.role === "admin") {
+      // Staff can moderate packages outside their own publisher memberships.
+    } else {
       await assertCanManageOwnedResource(ctx, {
         actor: user,
         ownerUserId: pkg.ownerUserId,
@@ -2162,7 +2164,9 @@ export const softDeletePackage = mutation({
     const pkg = await ctx.db.get(args.packageId);
     if (!pkg) throw new ConvexError("Package not found");
 
-    if (user.role !== "moderator" && user.role !== "admin") {
+    if (user.role === "moderator" || user.role === "admin") {
+      // Staff can moderate packages outside their own publisher memberships.
+    } else {
       await assertCanManageOwnedResource(ctx, {
         actor: user,
         ownerUserId: pkg.ownerUserId,

@@ -1159,11 +1159,18 @@ function makeSoftDeletePackageCtx(options?: {
   releases?: Array<Record<string, unknown>>;
   user?: Record<string, unknown> | null;
   membership?: Record<string, unknown> | null;
+  packageSearchDigest?: Record<string, unknown> | null;
+  capabilityDigests?: Array<Record<string, unknown>>;
 }) {
   const pkg = options?.pkg ?? makePackageDoc();
   const releases = options?.releases ?? [makeReleaseDoc()];
   const user = options?.user ?? { _id: "users:owner", role: "user" };
   const membership = options?.membership ?? null;
+  const packageSearchDigest =
+    options?.packageSearchDigest === undefined
+      ? { _id: "packageSearchDigest:demo", packageId: pkg?._id }
+      : options.packageSearchDigest;
+  const capabilityDigests = options?.capabilityDigests ?? [];
   const patch = vi.fn();
   const insert = vi.fn();
   return {
@@ -1200,21 +1207,14 @@ function makeSoftDeletePackageCtx(options?: {
           if (table === "packageSearchDigest") {
             return {
               withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packageSearchDigest:demo",
-                  packageId: pkg?._id,
-                  name: pkg?.name,
-                  normalizedName: pkg?.normalizedName,
-                  displayName: pkg?.displayName,
-                  softDeletedAt: undefined,
-                }),
+                unique: vi.fn().mockResolvedValue(packageSearchDigest),
               })),
             };
           }
           if (table === "packageCapabilitySearchDigest") {
             return {
               withIndex: vi.fn(() => ({
-                collect: vi.fn().mockResolvedValue([]),
+                collect: vi.fn().mockResolvedValue(capabilityDigests),
               })),
             };
           }
@@ -2237,6 +2237,46 @@ describe("packages public queries", () => {
     });
     expect(patch).toHaveBeenCalledWith(
       "packages:demo",
+      expect.objectContaining({
+        softDeletedAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("syncs package search digests when packages are soft-deleted", async () => {
+    const { ctx, patch } = makeSoftDeletePackageCtx({
+      pkg: makePackageDoc({ capabilityTags: ["tools"] }),
+      packageSearchDigest: {
+        _id: "packageSearchDigest:demo",
+        packageId: "packages:demo",
+        softDeletedAt: undefined,
+      },
+      capabilityDigests: [
+        {
+          _id: "packageCapabilitySearchDigest:tools",
+          packageId: "packages:demo",
+          capabilityTag: "tools",
+          softDeletedAt: undefined,
+        },
+      ],
+    });
+
+    await expect(
+      softDeletePackageInternalHandler(ctx, {
+        userId: "users:owner",
+        name: "demo-plugin",
+      }),
+    ).resolves.toMatchObject({ ok: true, alreadyDeleted: false });
+
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({
+        softDeletedAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest:tools",
       expect.objectContaining({
         softDeletedAt: expect.any(Number),
       }),
