@@ -102,7 +102,7 @@ function run(command: string, args: string[], extraEnv: Record<string, string | 
 }
 
 async function main() {
-  const options = parseArgs(Bun.argv.slice(2));
+  const options = parseArgs(process.argv.slice(2));
   const envFile = findEnvFile(options.envFile);
   if (!envFile) {
     console.error(
