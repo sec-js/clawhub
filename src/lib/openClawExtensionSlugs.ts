@@ -1,4 +1,4 @@
-export const OPENCLAW_EXTENSION_SLUG_TO_PACKAGE = {
+const OPENCLAW_EXTENSION_SLUG_TO_PACKAGE = {
   acpx: "@openclaw/acpx",
   "active-memory": "@openclaw/active-memory",
   alibaba: "@openclaw/alibaba-provider",

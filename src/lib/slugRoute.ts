@@ -4,7 +4,7 @@ import { fetchSkillPageData } from "./skillPage";
 
 const OPENCLAW_HANDLE = "openclaw";
 
-export type SlugRouteTarget =
+type SlugRouteTarget =
   | {
       kind: "plugin";
       name: string;
