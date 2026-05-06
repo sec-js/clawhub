@@ -1,5 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
+import { getOpenClawPackageCandidateNames } from "../../../../lib/openClawExtensionSlugs";
 import {
   fetchPackageDetail,
   fetchPackageVersion,
@@ -28,9 +29,7 @@ export const Route = createFileRoute("/plugins/$name/security/$scanner")({
   },
   loader: async ({ params }): Promise<PluginSecurityLoaderData> => {
     const requestedName = params.name;
-    const candidateNames = requestedName.includes("/")
-      ? [requestedName]
-      : [requestedName, `@openclaw/${requestedName}`];
+    const candidateNames = getOpenClawPackageCandidateNames(requestedName);
 
     let resolvedName = requestedName;
     let detail: PackageDetailResponse = { package: null, owner: null };

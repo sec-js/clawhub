@@ -481,7 +481,7 @@ describe("plugin detail route", () => {
     });
   });
 
-  it("falls back to the official scoped package name for short plugin routes", async () => {
+  it("prefers the official scoped package name for short plugin routes", async () => {
     const route = await loadRoute();
     const loader = route.__config.loader as ({
       params,
@@ -492,36 +492,78 @@ describe("plugin detail route", () => {
     const fetchPackageReadmeMock = vi.mocked(fetchPackageReadme);
     const fetchPackageVersionMock = vi.mocked(fetchPackageVersion);
 
-    fetchPackageDetailMock
-      .mockResolvedValueOnce({ package: null, owner: null })
-      .mockResolvedValueOnce({
-        package: {
-          name: "@openclaw/matrix",
-          displayName: "Matrix",
-          family: "code-plugin",
-          channel: "official",
-          isOfficial: true,
-          summary: "Matrix plugin",
-          latestVersion: "2026.3.22",
-          createdAt: 1,
-          updatedAt: 1,
-          tags: { latest: "2026.3.22" },
-          compatibility: null,
-          capabilities: null,
-          verification: null,
-        },
-        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
-      });
+    fetchPackageDetailMock.mockResolvedValueOnce({
+      package: {
+        name: "@openclaw/matrix",
+        displayName: "Matrix",
+        family: "code-plugin",
+        channel: "official",
+        isOfficial: true,
+        summary: "Matrix plugin",
+        latestVersion: "2026.3.22",
+        createdAt: 1,
+        updatedAt: 1,
+        tags: { latest: "2026.3.22" },
+        compatibility: null,
+        capabilities: null,
+        verification: null,
+      },
+      owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+    });
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
     const result = await loader({ params: { name: "matrix" } });
 
-    expect(fetchPackageDetailMock).toHaveBeenNthCalledWith(1, "matrix");
-    expect(fetchPackageDetailMock).toHaveBeenNthCalledWith(2, "@openclaw/matrix");
+    expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
+    expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(result.detail.package?.name).toBe("@openclaw/matrix");
     expect(result.rateLimited).toBeNull();
+  });
+
+  it("uses extension npm config for short plugin route candidates", async () => {
+    const route = await loadRoute();
+    const loader = route.__config.loader as ({
+      params,
+    }: {
+      params: { name: string };
+    }) => Promise<PluginDetailLoaderData>;
+    const fetchPackageDetailMock = vi.mocked(fetchPackageDetail);
+    const fetchPackageReadmeMock = vi.mocked(fetchPackageReadme);
+    const fetchPackageVersionMock = vi.mocked(fetchPackageVersion);
+
+    fetchPackageDetailMock.mockResolvedValueOnce({
+      package: {
+        name: "@openclaw/anthropic-provider",
+        displayName: "Anthropic",
+        family: "code-plugin",
+        channel: "official",
+        isOfficial: true,
+        summary: "Anthropic provider",
+        latestVersion: "2026.3.22",
+        createdAt: 1,
+        updatedAt: 1,
+        tags: { latest: "2026.3.22" },
+        compatibility: null,
+        capabilities: null,
+        verification: null,
+      },
+      owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+    });
+    fetchPackageReadmeMock.mockResolvedValueOnce("README");
+    fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
+
+    const result = await loader({ params: { name: "anthropic" } });
+
+    expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
+    expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
+    expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
+    expect(fetchPackageVersionMock).toHaveBeenCalledWith(
+      "@openclaw/anthropic-provider",
+      "2026.3.22",
+    );
+    expect(result.detail.package?.name).toBe("@openclaw/anthropic-provider");
   });
 });

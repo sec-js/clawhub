@@ -16,6 +16,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
@@ -44,9 +45,7 @@ type PluginDetailLoaderData = {
 export const Route = createFileRoute("/plugins/$name")({
   loader: async ({ params }): Promise<PluginDetailLoaderData> => {
     const requestedName = params.name;
-    const candidateNames = requestedName.includes("/")
-      ? [requestedName]
-      : [requestedName, `@openclaw/${requestedName}`];
+    const candidateNames = getOpenClawPackageCandidateNames(requestedName);
 
     let resolvedName = requestedName;
     let detail: PackageDetailResponse = { package: null, owner: null };
