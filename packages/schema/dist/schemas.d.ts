@@ -78,6 +78,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
         sha256: string;
         contentType?: string | undefined;
     }[];
+    ownerHandle?: string | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
     source?: {

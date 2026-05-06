@@ -142,6 +142,8 @@ Stores your API token + cached registry URL.
 
 - Publishes via `POST /api/v1/skills` (multipart).
 - Requires semver: `--version 1.2.3`.
+- `--owner <handle>` publishes under an org/user publisher handle when the
+  actor has publisher access.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
 - ClawHub does not support paid skills or per-skill pricing.

@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
 import { apiRequestForm } from "../../http.js";
@@ -16,6 +16,7 @@ export async function cmdPublish(
   options: {
     slug?: string;
     name?: string;
+    owner?: string;
     version?: string;
     changelog?: string;
     tags?: string;
@@ -35,6 +36,7 @@ export async function cmdPublish(
 
   const slug = options.slug ?? sanitizeSlug(basename(folder));
   const displayName = options.name ?? titleCase(basename(folder));
+  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version = options.version;
   const changelog = options.changelog ?? "";
   const tagsValue = options.tags ?? "latest";
@@ -52,7 +54,7 @@ export async function cmdPublish(
 
   const spinner = createSpinner(`Preparing ${slug}@${version}`);
   try {
-    const filesOnDisk = await listTextFiles(folder);
+    const filesOnDisk = await ensureRootManifestFile(folder, await listTextFiles(folder));
     if (filesOnDisk.length === 0) fail("No files found");
     if (
       !filesOnDisk.some((file) => {
@@ -69,6 +71,7 @@ export async function cmdPublish(
       JSON.stringify({
         slug,
         displayName,
+        ...(ownerHandle ? { ownerHandle } : {}),
         version,
         changelog,
         acceptLicenseTerms: true,
@@ -97,6 +100,36 @@ export async function cmdPublish(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+async function ensureRootManifestFile(
+  folder: string,
+  files: Awaited<ReturnType<typeof listTextFiles>>,
+) {
+  if (
+    files.some((file) => {
+      const lower = file.relPath.toLowerCase();
+      return lower === "skill.md" || lower === "skills.md";
+    })
+  ) {
+    return files;
+  }
+
+  const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+  const manifest = entries.find((entry) => {
+    const lower = entry.name.toLowerCase();
+    return entry.isFile() && (lower === "skill.md" || lower === "skills.md");
+  });
+  if (!manifest) return files;
+
+  return [
+    ...files,
+    {
+      relPath: manifest.name,
+      bytes: new Uint8Array(await readFile(join(folder, manifest.name))),
+      contentType: "text/markdown",
+    },
+  ];
 }
 
 async function looksLikePluginFolder(folder: string) {

@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.12.3 - 2026-05-06
 
 ### Fixes
 
+- CLI/API: allow skill publishes to target an org/user publisher with `--owner` / `ownerHandle`, and keep root `SKILL.md` publishable even when broad ignore rules match Markdown files (thanks @deepujain).
 - Packages: expose owned plugin/package soft-delete in the CLI and dashboard, keep moderator takedown access, and remove deleted packages from package search surfaces (thanks @Patrick-Erichsen).
-- CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
 - API: raise public read rate limits to reduce false-positive 429s from browser pages and production smoke tests (thanks @steipete).
+- CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
 - Moderation: calibrate VirusTotal Code Insight suspicious verdicts so uncorroborated AI-only findings do not keep otherwise clean skills quarantined (#1830, #1841) (thanks @deepujain).
 
 ## 0.11.0 - 2026-04-28

@@ -995,6 +995,8 @@ Publishes a new version.
 
 - Preferred: `multipart/form-data` with `payload` JSON + `files[]` blobs.
 - JSON body with `files` (storageId-based) is also accepted.
+- Optional payload field: `ownerHandle`. When present, the API resolves that
+  publisher server-side and requires the actor to have publisher access.
 
 ### `POST /api/v1/packages`
 

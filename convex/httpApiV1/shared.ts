@@ -268,22 +268,7 @@ function toFileLike(entry: FormDataEntryValue): FileLikeEntry | null {
 export async function parseMultipartPublish(
   ctx: ActionCtx,
   request: Request,
-): Promise<{
-  slug: string;
-  displayName: string;
-  version: string;
-  changelog: string;
-  acceptLicenseTerms?: boolean;
-  tags?: string[];
-  forkOf?: { slug: string; version?: string };
-  files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }>;
-}> {
+): Promise<ReturnType<typeof parsePublishBody>> {
   const form = await request.formData();
   const payloadRaw = form.get("payload");
   if (!payloadRaw || typeof payloadRaw !== "string") {
@@ -325,6 +310,7 @@ export async function parseMultipartPublish(
   const body = {
     slug: payload.slug,
     displayName: payload.displayName,
+    ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
@@ -344,6 +330,7 @@ export function parsePublishBody(body: unknown) {
   return {
     slug: parsed.slug,
     displayName: parsed.displayName,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
     version: parsed.version,
     changelog: parsed.changelog,
     acceptLicenseTerms: parsed.acceptLicenseTerms,
