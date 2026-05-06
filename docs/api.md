@@ -97,6 +97,7 @@ Auth required:
 
 - `POST /api/v1/skills` (publish, multipart preferred)
 - `DELETE /api/v1/skills/{slug}`
+- `DELETE /api/v1/packages/{name}`
 - `POST /api/v1/skills/{slug}/undelete`
 - `POST /api/v1/skills/{slug}/rename`
 - `POST /api/v1/skills/{slug}/merge`

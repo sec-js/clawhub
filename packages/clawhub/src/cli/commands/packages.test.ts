@@ -28,6 +28,7 @@ vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
+  cmdDeletePackage,
   cmdDeletePackageTrustedPublisher,
   cmdAppealPackage,
   cmdDownloadPackage,
@@ -2440,5 +2441,29 @@ describe("package commands", () => {
       }),
       undefined,
     );
+  });
+
+  it("soft-deletes a package with confirmation bypass", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeletePackage(makeOpts(), "@openclaw/zalo", { yes: true }, false);
+
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/packages/%40openclaw%2Fzalo",
+        token: "tkn",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires --yes for non-interactive package deletes", async () => {
+    await expect(cmdDeletePackage(makeOpts(), "@openclaw/zalo", {}, false)).rejects.toThrow(
+      /--yes/i,
+    );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });

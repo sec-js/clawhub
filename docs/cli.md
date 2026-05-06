@@ -313,6 +313,21 @@ clawhub package verify ./example-plugin-1.2.3.tgz --package @openclaw/example-pl
 clawhub package verify ./example-plugin-1.2.3.tgz --sha256 <hex>
 ```
 
+### `package delete <name>`
+
+- Soft-deletes a package and all releases.
+- Requires the package owner, an org publisher owner/admin, platform moderator,
+  or platform admin.
+- Flags:
+  - `--yes`: skip confirmation.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package delete @openclaw/example-plugin --yes
+```
+
 ### `package moderate <name>`
 
 - Moderator/admin command for package release review.
