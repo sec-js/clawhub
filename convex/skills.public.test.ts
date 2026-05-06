@@ -100,7 +100,7 @@ const listSkillReportsInternalHandler = (
       actorUserId: string;
       cursor?: string | null;
       limit?: number;
-      status?: "open" | "triaged" | "dismissed" | "all";
+      status?: "open" | "confirmed" | "dismissed" | "all";
     },
     {
       items: Array<{ reportId: string; slug: string; status: string }>;
@@ -115,7 +115,7 @@ const triageSkillReportForUserInternalHandler = (
     {
       actorUserId: string;
       reportId: string;
-      status: "open" | "triaged" | "dismissed";
+      status: "open" | "confirmed" | "dismissed";
       note?: string;
       finalAction?: "none" | "hide";
     },
@@ -515,7 +515,7 @@ describe("skill artifact moderation", () => {
     });
     const insert = vi.fn(async (table: string) => {
       if (table === "skillAppeals") return "skillAppeals:1";
-      if (table === "skillModerationEvents") return "skillModerationEvents:1";
+      if (table === "skillModerationEventLogs") return "skillModerationEventLogs:1";
       if (table === "auditLogs") return "auditLogs:1";
       throw new Error(`Unexpected insert table: ${table}`);
     });
@@ -575,7 +575,7 @@ describe("skill artifact moderation", () => {
       createdAt: expect.any(Number),
     });
     expect(insert).toHaveBeenCalledWith(
-      "skillModerationEvents",
+      "skillModerationEventLogs",
       expect.objectContaining({
         kind: "appeal",
         appealId: "skillAppeals:1",
@@ -684,7 +684,7 @@ describe("skill artifact moderation", () => {
       {
         actorUserId: "users:moderator",
         reportId: "skillReports:1",
-        status: "triaged",
+        status: "confirmed",
         note: "confirmed malicious behavior",
         finalAction: "hide",
       },
@@ -692,11 +692,11 @@ describe("skill artifact moderation", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      status: "triaged",
+      status: "confirmed",
       actionTaken: "hide",
     });
     expect(patch).toHaveBeenCalledWith("skillReports:1", {
-      status: "triaged",
+      status: "confirmed",
       triagedAt: expect.any(Number),
       triagedBy: "users:moderator",
       triageNote: "confirmed malicious behavior",

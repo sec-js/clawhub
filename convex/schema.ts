@@ -1291,7 +1291,14 @@ const skillReports = defineTable({
   version: v.optional(v.string()),
   userId: v.id("users"),
   reason: v.optional(v.string()),
-  status: v.optional(v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed"))),
+  status: v.optional(
+    v.union(
+      v.literal("open"),
+      v.literal("confirmed"),
+      v.literal("dismissed"),
+      v.literal("triaged"),
+    ),
+  ),
   triagedAt: v.optional(v.number()),
   triagedBy: v.optional(v.id("users")),
   triageNote: v.optional(v.string()),
@@ -1324,7 +1331,7 @@ const skillAppeals = defineTable({
   .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user_createdAt", ["userId", "createdAt"]);
 
-const skillModerationEvents = defineTable({
+const skillModerationEventLogs = defineTable({
   kind: v.union(v.literal("report"), v.literal("appeal")),
   reportId: v.optional(v.id("skillReports")),
   appealId: v.optional(v.id("skillAppeals")),
@@ -1343,7 +1350,12 @@ const packageReports = defineTable({
   version: v.optional(v.string()),
   userId: v.id("users"),
   reason: v.optional(v.string()),
-  status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+  status: v.union(
+    v.literal("open"),
+    v.literal("confirmed"),
+    v.literal("dismissed"),
+    v.literal("triaged"),
+  ),
   triagedAt: v.optional(v.number()),
   triagedBy: v.optional(v.id("users")),
   triageNote: v.optional(v.string()),
@@ -1376,7 +1388,7 @@ const packageAppeals = defineTable({
   .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user_createdAt", ["userId", "createdAt"]);
 
-const packageModerationEvents = defineTable({
+const packageModerationEventLogs = defineTable({
   kind: v.union(v.literal("report"), v.literal("appeal")),
   reportId: v.optional(v.id("packageReports")),
   appealId: v.optional(v.id("packageAppeals")),
@@ -1673,10 +1685,10 @@ export default defineSchema({
   commentReports,
   skillReports,
   skillAppeals,
-  skillModerationEvents,
+  skillModerationEventLogs,
   packageReports,
   packageAppeals,
-  packageModerationEvents,
+  packageModerationEventLogs,
   officialPluginMigrations,
   soulComments,
   stars,

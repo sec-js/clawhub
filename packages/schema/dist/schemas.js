@@ -206,7 +206,7 @@ export const ApiV1SkillModerationResponseSchema = type({
         }).array(),
     }).or("null"),
 });
-export const SkillReportStatusSchema = type('"open"|"triaged"|"dismissed"');
+export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export const SkillReportFinalActionSchema = type('"none"|"hide"');
 export const SkillReportListStatusSchema = SkillReportStatusSchema.or('"all"');
 export const SkillAppealStatusSchema = type('"open"|"accepted"|"rejected"');

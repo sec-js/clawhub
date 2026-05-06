@@ -274,7 +274,7 @@ const listPackageReportsInternalHandler = (
       actorUserId: string;
       cursor?: string | null;
       limit?: number;
-      status?: "open" | "triaged" | "dismissed" | "all";
+      status?: "open" | "confirmed" | "dismissed" | "all";
     },
     {
       items: Array<{ reportId: string; name: string; status: string; reason?: string | null }>;
@@ -288,7 +288,7 @@ const triagePackageReportForUserInternalHandler = (
     {
       actorUserId: string;
       reportId: string;
-      status: "open" | "triaged" | "dismissed";
+      status: "open" | "confirmed" | "dismissed";
       note?: string;
       finalAction?: "none" | "quarantine" | "revoke";
     },
@@ -4070,7 +4070,7 @@ describe("packages public queries", () => {
       {
         actorUserId: "users:moderator",
         reportId: "packageReports:1",
-        status: "triaged",
+        status: "confirmed",
         note: "handled",
       },
     );
@@ -4078,11 +4078,11 @@ describe("packages public queries", () => {
     expect(result).toMatchObject({
       ok: true,
       reportId: "packageReports:1",
-      status: "triaged",
+      status: "confirmed",
       reportCount: 1,
     });
     expect(patch).toHaveBeenCalledWith("packageReports:1", {
-      status: "triaged",
+      status: "confirmed",
       triagedAt: expect.any(Number),
       triagedBy: "users:moderator",
       triageNote: "handled",
@@ -4140,7 +4140,7 @@ describe("packages public queries", () => {
       {
         actorUserId: "users:moderator",
         reportId: "packageReports:1",
-        status: "triaged",
+        status: "confirmed",
         note: "confirmed malicious behavior",
         finalAction: "quarantine",
       },
@@ -4148,11 +4148,11 @@ describe("packages public queries", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      status: "triaged",
+      status: "confirmed",
       actionTaken: "quarantine",
     });
     expect(patch).toHaveBeenCalledWith("packageReports:1", {
-      status: "triaged",
+      status: "confirmed",
       triagedAt: expect.any(Number),
       triagedBy: "users:moderator",
       triageNote: "confirmed malicious behavior",

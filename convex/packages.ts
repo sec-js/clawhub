@@ -36,7 +36,8 @@ import {
   assertArtifactAppealTransition,
   assertArtifactReportFinalAction,
   assertArtifactReportTransition,
-  recordPackageModerationEvent,
+  readArtifactReportStatus,
+  appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -210,7 +211,7 @@ type PackageReleaseScanStatus = ReturnType<typeof resolvePackageReleaseScanStatu
 type PackageReleaseModerationQueueDoc = Omit<Doc<"packageReleases">, "createdAt"> & {
   createdAt?: number;
 };
-type PackageReportStatus = "open" | "triaged" | "dismissed";
+type PackageReportStatus = "open" | "confirmed" | "dismissed";
 type PackageReportFinalAction = "none" | "quarantine" | "revoke";
 type PackageAppealFinalAction = "none" | "approve";
 type PackageModerationQueueItem = {
@@ -2481,7 +2482,7 @@ export const reportPackageForUserInternal = internalMutation({
           version: release?.version ?? version ?? null,
           reportCount: nextReportCount,
         };
-        await recordPackageModerationEvent(ctx, {
+        await appendPackageModerationEventLog(ctx, {
           kind: "report",
           reportId: existing._id,
           actorUserId: actor._id,
@@ -2545,7 +2546,7 @@ export const reportPackageForUserInternal = internalMutation({
       version: release?.version ?? version ?? null,
       reportCount: nextReportCount,
     };
-    await recordPackageModerationEvent(ctx, {
+    await appendPackageModerationEventLog(ctx, {
       kind: "report",
       reportId,
       actorUserId: actor._id,
@@ -2586,7 +2587,7 @@ function toPackageReportListItem(
     family: pkg.family,
     version: report.version ?? null,
     reason: report.reason ?? null,
-    status: report.status,
+    status: readArtifactReportStatus(report.status),
     createdAt: report.createdAt,
     reporter: {
       userId: report.userId,
@@ -2606,7 +2607,7 @@ export const listPackageReportsInternal = internalQuery({
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
     status: v.optional(
-      v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed"), v.literal("all")),
+      v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed"), v.literal("all")),
     ),
   },
   handler: async (ctx, args) => {
@@ -2647,7 +2648,7 @@ export const triagePackageReportForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     reportId: v.id("packageReports"),
-    status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+    status: v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed")),
     note: v.optional(v.string()),
     finalAction: v.optional(
       v.union(v.literal("none"), v.literal("quarantine"), v.literal("revoke")),
@@ -2664,17 +2665,18 @@ export const triagePackageReportForUserInternal = internalMutation({
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package report not found");
 
     const now = Date.now();
-    const previousStatus = report.status ?? "open";
-    assertArtifactReportTransition(previousStatus, args.status);
+    const previousStatus = readArtifactReportStatus(report.status);
+    const nextStatus = args.status;
+    assertArtifactReportTransition(previousStatus, nextStatus);
     const wasOpen = previousStatus === "open";
-    const willBeOpen = args.status === "open";
+    const willBeOpen = nextStatus === "open";
     const note = args.note?.trim();
-    if (!willBeOpen && !note) throw new ConvexError("Triage note required.");
+    if (!willBeOpen && !note) throw new ConvexError("Review note required.");
     const finalAction = args.finalAction ?? "none";
-    assertArtifactReportFinalAction(args.status, finalAction, ["quarantine", "revoke"]);
+    assertArtifactReportFinalAction(nextStatus, finalAction, ["quarantine", "revoke"]);
 
     await ctx.db.patch(report._id, {
-      status: args.status,
+      status: nextStatus,
       triagedAt: willBeOpen ? undefined : now,
       triagedBy: willBeOpen ? undefined : actor._id,
       triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
@@ -2721,7 +2723,7 @@ export const triagePackageReportForUserInternal = internalMutation({
       version: moderatedRelease?.version ?? report.version ?? null,
       reportCount,
     };
-    await recordPackageModerationEvent(ctx, {
+    await appendPackageModerationEventLog(ctx, {
       kind: "report",
       reportId: report._id,
       actorUserId: actor._id,
@@ -2877,7 +2879,7 @@ export const submitPackageAppealForUserInternal = internalMutation({
       moderationState,
       scanStatus,
     };
-    await recordPackageModerationEvent(ctx, {
+    await appendPackageModerationEventLog(ctx, {
       kind: "appeal",
       appealId,
       actorUserId: actor._id,
@@ -3031,7 +3033,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       status: args.status,
       finalAction,
     };
-    await recordPackageModerationEvent(ctx, {
+    await appendPackageModerationEventLog(ctx, {
       kind: "appeal",
       appealId: appeal._id,
       actorUserId: actor._id,
@@ -3055,7 +3057,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
   },
 });
 
-export const listPackageModerationEventsInternal = internalQuery({
+export const listPackageModerationEventLogsInternal = internalQuery({
   args: {
     actorUserId: v.id("users"),
     kind: v.union(v.literal("report"), v.literal("appeal")),
@@ -3072,14 +3074,14 @@ export const listPackageModerationEventsInternal = internalQuery({
     if (args.kind === "report") {
       if (!args.reportId) throw new ConvexError("reportId required");
       return await ctx.db
-        .query("packageModerationEvents")
+        .query("packageModerationEventLogs")
         .withIndex("by_report_createdAt", (q) => q.eq("reportId", args.reportId))
         .order("asc")
         .take(limit);
     }
     if (!args.appealId) throw new ConvexError("appealId required");
     return await ctx.db
-      .query("packageModerationEvents")
+      .query("packageModerationEventLogs")
       .withIndex("by_appeal_createdAt", (q) => q.eq("appealId", args.appealId))
       .order("asc")
       .take(limit);

@@ -1290,8 +1290,8 @@ export async function cmdListPackageReports(
   options: PackageReportListOptions = {},
 ) {
   const status = options.status?.trim() || "open";
-  if (!["open", "triaged", "dismissed", "all"].includes(status)) {
-    fail("--status must be open, triaged, dismissed, or all");
+  if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
+    fail("--status must be open, confirmed, dismissed, or all");
   }
 
   const token = await requireAuthToken();
@@ -1325,7 +1325,7 @@ export async function cmdListPackageReports(
       console.log(`${item.reportId} ${item.status} ${item.name}${version}`);
       console.log(`  reporter: ${reporter}`);
       if (item.reason) console.log(`  reason: ${item.reason}`);
-      if (item.triageNote) console.log(`  triage: ${item.triageNote}`);
+      if (item.triageNote) console.log(`  note: ${item.triageNote}`);
     }
   }
   if (!result.done && result.nextCursor) {
@@ -1341,8 +1341,8 @@ export async function cmdTriagePackageReport(
   const trimmed = reportId.trim();
   if (!trimmed) fail("Report id required");
   const status = options.status?.trim();
-  if (!status || !["open", "triaged", "dismissed"].includes(status)) {
-    fail("--status must be open, triaged, or dismissed");
+  if (!status || !["open", "confirmed", "dismissed"].includes(status)) {
+    fail("--status must be open, confirmed, or dismissed");
   }
   const finalAction = (options.finalAction ?? options.action)?.trim() as
     | PackageReportFinalAction

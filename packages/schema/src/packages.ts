@@ -71,7 +71,7 @@ export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
 export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
 export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
 
-export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
+export const PackageReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
 export const PackageReportFinalActionSchema = type('"none"|"quarantine"|"revoke"');
 export type PackageReportFinalAction = (typeof PackageReportFinalActionSchema)[inferred];

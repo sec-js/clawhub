@@ -57,11 +57,11 @@ export declare const PackageArtifactKindSchema: import("arktype/internal/variant
 export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
 export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
 export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
-export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed", {}>;
+export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed", {}>;
 export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
 export declare const PackageReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "quarantine" | "revoke", {}>;
 export type PackageReportFinalAction = (typeof PackageReportFinalActionSchema)[inferred];
-export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed" | "all", {}>;
+export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed" | "all", {}>;
 export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
 export declare const PackageAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "accepted" | "rejected", {}>;
 export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
@@ -524,7 +524,7 @@ export declare const ApiV1PackageReportResponseSchema: import("arktype/internal/
 }, {}>;
 export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
 export declare const PackageReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "open" | "triaged" | "dismissed";
+    status: "open" | "confirmed" | "dismissed";
     note?: string | undefined;
     finalAction?: "none" | "quarantine" | "revoke" | undefined;
 }, {}>;
@@ -592,7 +592,7 @@ export declare const ApiV1PackageReportListResponseSchema: import("arktype/inter
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        status: "open" | "triaged" | "dismissed";
+        status: "open" | "confirmed" | "dismissed";
         createdAt: number;
         reporter: {
             userId: string;
@@ -615,7 +615,7 @@ export declare const ApiV1PackageReportTriageResponseSchema: import("arktype/int
     ok: true;
     reportId: string;
     packageId: string;
-    status: "open" | "triaged" | "dismissed";
+    status: "open" | "confirmed" | "dismissed";
     reportCount: number;
     actionTaken?: "none" | "quarantine" | "revoke" | undefined;
 }, {}>;

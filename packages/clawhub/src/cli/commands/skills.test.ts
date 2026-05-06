@@ -345,13 +345,13 @@ describe("skill moderation commands", () => {
       ok: true,
       reportId: "skillReports:1",
       skillId: "skills:1",
-      status: "triaged",
+      status: "confirmed",
       reportCount: 0,
       actionTaken: "hide",
     });
 
     await cmdTriageSkillReport(makeOpts(), "skillReports:1", {
-      status: "triaged",
+      status: "confirmed",
       note: "handled",
       action: "hide",
     });
@@ -362,12 +362,12 @@ describe("skill moderation commands", () => {
         method: "POST",
         path: "/api/v1/skills/-/reports/skillReports%3A1/triage",
         token: "tkn",
-        body: { status: "triaged", note: "handled", finalAction: "hide" },
+        body: { status: "confirmed", note: "handled", finalAction: "hide" },
       },
       expect.anything(),
     );
     expect(mockLog).toHaveBeenCalledWith(
-      "OK. Skill report skillReports:1 set to triaged; action hide.",
+      "OK. Skill report skillReports:1 set to confirmed; action hide.",
     );
   });
 

@@ -642,7 +642,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (!auth.ok) return auth.response;
     const url = new URL(request.url);
     const status = (url.searchParams.get("status")?.trim() || "open") as SkillReportListStatus;
-    if (!["open", "triaged", "dismissed", "all"].includes(status)) {
+    if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
       return text("Invalid skill report status", 400, rate.headers);
     }
     const result = await runQueryRef(ctx, internalRefs.skills.listSkillReportsInternal, {
@@ -1266,7 +1266,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         await request.json(),
         "Skill report triage payload",
       ) as {
-        status: "open" | "triaged" | "dismissed";
+        status: "open" | "confirmed" | "dismissed";
         note?: string;
         finalAction?: "none" | "hide";
       };

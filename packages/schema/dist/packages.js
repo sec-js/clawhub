@@ -48,7 +48,7 @@ export const PackageStatsSchema = type({
 });
 export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
 export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
-export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
+export const PackageReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export const PackageReportFinalActionSchema = type('"none"|"quarantine"|"revoke"');
 export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
 export const PackageAppealStatusSchema = type('"open"|"accepted"|"rejected"');

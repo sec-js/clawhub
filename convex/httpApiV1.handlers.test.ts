@@ -1393,7 +1393,7 @@ describe("httpApiV1 handlers", () => {
         ok: true,
         reportId: "skillReports:1",
         skillId: "skills:1",
-        status: "triaged",
+        status: "confirmed",
         reportCount: 0,
       };
     });
@@ -1403,19 +1403,19 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/-/reports/skillReports%3A1/triage", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ status: "triaged", note: "handled", finalAction: "hide" }),
+        body: JSON.stringify({ status: "confirmed", note: "handled", finalAction: "hide" }),
       }),
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ status: "triaged" });
+    await expect(response.json()).resolves.toMatchObject({ status: "confirmed" });
     expect(runMutation).toHaveBeenCalledWith(
       (internal as unknown as { skills: Record<string, unknown> }).skills
         .triageSkillReportForUserInternal,
       {
         actorUserId: "users:moderator",
         reportId: "skillReports:1",
-        status: "triaged",
+        status: "confirmed",
         note: "handled",
         finalAction: "hide",
       },
@@ -4868,7 +4868,7 @@ describe("httpApiV1 handlers", () => {
         ok: true,
         reportId: "packageReports:1",
         packageId: "packages:1",
-        status: "triaged",
+        status: "confirmed",
         reportCount: 0,
       };
     });
@@ -4878,16 +4878,16 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/reports/packageReports%3A1/triage", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ status: "triaged", note: "handled", finalAction: "quarantine" }),
+        body: JSON.stringify({ status: "confirmed", note: "handled", finalAction: "quarantine" }),
       }),
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ status: "triaged" });
+    await expect(response.json()).resolves.toMatchObject({ status: "confirmed" });
     expect(runMutation).toHaveBeenCalledWith(internal.packages.triagePackageReportForUserInternal, {
       actorUserId: "users:moderator",
       reportId: "packageReports:1",
-      status: "triaged",
+      status: "confirmed",
       note: "handled",
       finalAction: "quarantine",
     });

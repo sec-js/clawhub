@@ -2,7 +2,8 @@ import { ConvexError, type Value } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
-export type ArtifactReportStatus = "open" | "triaged" | "dismissed";
+export type ArtifactReportStatus = "open" | "confirmed" | "dismissed";
+export type StoredArtifactReportStatus = ArtifactReportStatus | "triaged";
 export type ArtifactAppealStatus = "open" | "accepted" | "rejected";
 
 type BaseArtifactModerationEventInput = {
@@ -28,8 +29,8 @@ type PackageModerationEventInput = BaseArtifactModerationEventInput & {
 };
 
 const reportStatusTransitions = {
-  open: ["triaged", "dismissed"],
-  triaged: ["open"],
+  open: ["confirmed", "dismissed"],
+  confirmed: ["open"],
   dismissed: ["open"],
 } satisfies Record<ArtifactReportStatus, ArtifactReportStatus[]>;
 
@@ -61,6 +62,13 @@ export function assertArtifactReportTransition(
     nextStatus,
     reportStatusTransitions,
   );
+}
+
+export function readArtifactReportStatus(
+  status: StoredArtifactReportStatus | undefined,
+): ArtifactReportStatus {
+  if (!status) return "open";
+  return status === "triaged" ? "confirmed" : status;
 }
 
 export function assertArtifactAppealTransition(
@@ -107,11 +115,11 @@ export function assertArtifactAppealFinalAction<TAction extends string>(
   throw new ConvexError(`Unsupported appeal final action: ${finalAction}.`);
 }
 
-export async function recordSkillModerationEvent(
+export async function appendSkillModerationEventLog(
   ctx: MutationCtx,
   event: SkillModerationEventInput,
 ) {
-  await ctx.db.insert("skillModerationEvents", {
+  await ctx.db.insert("skillModerationEventLogs", {
     kind: event.kind,
     ...(event.reportId ? { reportId: event.reportId } : {}),
     ...(event.appealId ? { appealId: event.appealId } : {}),
@@ -130,11 +138,11 @@ export async function recordSkillModerationEvent(
   });
 }
 
-export async function recordPackageModerationEvent(
+export async function appendPackageModerationEventLog(
   ctx: MutationCtx,
   event: PackageModerationEventInput,
 ) {
-  await ctx.db.insert("packageModerationEvents", {
+  await ctx.db.insert("packageModerationEventLogs", {
     kind: event.kind,
     ...(event.reportId ? { reportId: event.reportId } : {}),
     ...(event.appealId ? { appealId: event.appealId } : {}),

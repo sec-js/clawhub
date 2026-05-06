@@ -228,11 +228,11 @@ export declare const ApiV1SkillModerationResponseSchema: import("arktype/interna
         legacyReason?: string | null | undefined;
     } | null;
 }, {}>;
-export declare const SkillReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed", {}>;
+export declare const SkillReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed", {}>;
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
 export declare const SkillReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "hide", {}>;
 export type SkillReportFinalAction = (typeof SkillReportFinalActionSchema)[inferred];
-export declare const SkillReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed" | "all", {}>;
+export declare const SkillReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed" | "all", {}>;
 export type SkillReportListStatus = (typeof SkillReportListStatusSchema)[inferred];
 export declare const SkillAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "accepted" | "rejected", {}>;
 export type SkillAppealStatus = (typeof SkillAppealStatusSchema)[inferred];
@@ -264,7 +264,7 @@ export declare const ApiV1SkillAppealResponseSchema: import("arktype/internal/va
 }, {}>;
 export type ApiV1SkillAppealResponse = (typeof ApiV1SkillAppealResponseSchema)[inferred];
 export declare const SkillReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "open" | "triaged" | "dismissed";
+    status: "open" | "confirmed" | "dismissed";
     note?: string | undefined;
     finalAction?: "none" | "hide" | undefined;
 }, {}>;
@@ -281,7 +281,7 @@ export declare const ApiV1SkillReportListResponseSchema: import("arktype/interna
         skillId: string;
         slug: string;
         displayName: string;
-        status: "open" | "triaged" | "dismissed";
+        status: "open" | "confirmed" | "dismissed";
         createdAt: number;
         reporter: {
             userId: string;
@@ -304,7 +304,7 @@ export declare const ApiV1SkillReportTriageResponseSchema: import("arktype/inter
     ok: true;
     reportId: string;
     skillId: string;
-    status: "open" | "triaged" | "dismissed";
+    status: "open" | "confirmed" | "dismissed";
     reportCount: number;
     actionTaken?: "none" | "hide" | undefined;
 }, {}>;

@@ -211,7 +211,7 @@ function parsePackageReportListStatus(value: string | null): PackageReportListSt
   const normalized = value.trim().toLowerCase();
   if (
     normalized === "open" ||
-    normalized === "triaged" ||
+    normalized === "confirmed" ||
     normalized === "dismissed" ||
     normalized === "all"
   ) {
@@ -1516,7 +1516,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         await request.json(),
         "Package report triage payload",
       ) as {
-        status: "open" | "triaged" | "dismissed";
+        status: "open" | "confirmed" | "dismissed";
         note?: string;
         finalAction?: "none" | "quarantine" | "revoke";
       };

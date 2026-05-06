@@ -723,13 +723,13 @@ describe("package commands", () => {
       ok: true,
       reportId: "packageReports:1",
       packageId: "pkg_1",
-      status: "triaged",
+      status: "confirmed",
       reportCount: 0,
       actionTaken: "quarantine",
     });
 
     await cmdTriagePackageReport(makeOpts(), "packageReports:1", {
-      status: "triaged",
+      status: "confirmed",
       note: "handled",
       action: "quarantine",
     });
@@ -741,7 +741,7 @@ describe("package commands", () => {
         path: "/api/v1/packages/reports/packageReports%3A1/triage",
         token: "tkn",
         body: {
-          status: "triaged",
+          status: "confirmed",
           note: "handled",
           finalAction: "quarantine",
         },
@@ -749,7 +749,7 @@ describe("package commands", () => {
       expect.anything(),
     );
     expect(mockLog).toHaveBeenCalledWith(
-      "OK. Report packageReports:1 set to triaged; action quarantine.",
+      "OK. Report packageReports:1 set to confirmed; action quarantine.",
     );
   });
 

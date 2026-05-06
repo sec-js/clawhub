@@ -566,8 +566,8 @@ export async function cmdAppealSkill(
 
 export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReportListOptions = {}) {
   const status = options.status?.trim() || "open";
-  if (!["open", "triaged", "dismissed", "all"].includes(status)) {
-    fail("--status must be open, triaged, dismissed, or all");
+  if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
+    fail("--status must be open, confirmed, dismissed, or all");
   }
 
   const token = await requireAuthToken();
@@ -608,8 +608,8 @@ export async function cmdTriageSkillReport(
   const trimmed = reportId.trim();
   if (!trimmed) fail("Report id required");
   const status = options.status?.trim();
-  if (!status || !["open", "triaged", "dismissed"].includes(status)) {
-    fail("--status must be open, triaged, or dismissed");
+  if (!status || !["open", "confirmed", "dismissed"].includes(status)) {
+    fail("--status must be open, confirmed, or dismissed");
   }
   const finalAction = (options.finalAction ?? options.action)?.trim() as
     | SkillReportFinalAction
@@ -628,7 +628,11 @@ export async function cmdTriageSkillReport(
       method: "POST",
       path: `${ApiRoutes.skills}/-/reports/${encodeURIComponent(trimmed)}/triage`,
       token,
-      body: { status, ...(note ? { note } : {}), ...(finalAction ? { finalAction } : {}) },
+      body: {
+        status,
+        ...(note ? { note } : {}),
+        ...(finalAction ? { finalAction } : {}),
+      },
     },
     ApiV1SkillReportTriageResponseSchema,
   );

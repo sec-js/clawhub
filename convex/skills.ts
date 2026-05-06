@@ -28,7 +28,8 @@ import {
   assertArtifactAppealTransition,
   assertArtifactReportFinalAction,
   assertArtifactReportTransition,
-  recordSkillModerationEvent,
+  readArtifactReportStatus,
+  appendSkillModerationEventLog,
 } from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
@@ -2767,7 +2768,7 @@ export const report = mutation({
       });
     }
 
-    await recordSkillModerationEvent(ctx, {
+    await appendSkillModerationEventLog(ctx, {
       kind: "report",
       reportId,
       actorUserId: userId,
@@ -2846,7 +2847,7 @@ export const reportSkillForUserInternal = internalMutation({
           lastReportedAt: now,
           updatedAt: now,
         });
-        await recordSkillModerationEvent(ctx, {
+        await appendSkillModerationEventLog(ctx, {
           kind: "report",
           reportId: existing._id,
           actorUserId: actor._id,
@@ -2904,7 +2905,7 @@ export const reportSkillForUserInternal = internalMutation({
       lastReportedAt: now,
       updatedAt: now,
     });
-    await recordSkillModerationEvent(ctx, {
+    await appendSkillModerationEventLog(ctx, {
       kind: "report",
       reportId,
       actorUserId: actor._id,
@@ -2933,7 +2934,7 @@ export const reportSkillForUserInternal = internalMutation({
   },
 });
 
-type SkillReportStatus = "open" | "triaged" | "dismissed";
+type SkillReportStatus = "open" | "confirmed" | "dismissed";
 type SkillAppealStatus = "open" | "accepted" | "rejected";
 type SkillReportFinalAction = "none" | "hide";
 type SkillAppealFinalAction = "none" | "restore";
@@ -2993,7 +2994,7 @@ function toSkillReportListItem(
     displayName: skill.displayName,
     version: skillReport.version ?? null,
     reason: skillReport.reason ?? null,
-    status: skillReport.status ?? "open",
+    status: readArtifactReportStatus(skillReport.status),
     createdAt: skillReport.createdAt,
     reporter: {
       userId: skillReport.userId,
@@ -3220,7 +3221,7 @@ export const submitSkillAppealForUserInternal = internalMutation({
       createdAt: now,
     });
 
-    await recordSkillModerationEvent(ctx, {
+    await appendSkillModerationEventLog(ctx, {
       kind: "appeal",
       appealId,
       actorUserId: actor._id,
@@ -3259,7 +3260,7 @@ export const listSkillReportsInternal = internalQuery({
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
     status: v.optional(
-      v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed"), v.literal("all")),
+      v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed"), v.literal("all")),
     ),
   },
   handler: async (ctx, args) => {
@@ -3297,7 +3298,7 @@ export const triageSkillReportForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     reportId: v.id("skillReports"),
-    status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+    status: v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed")),
     note: v.optional(v.string()),
     finalAction: v.optional(v.union(v.literal("none"), v.literal("hide"))),
   },
@@ -3312,17 +3313,18 @@ export const triageSkillReportForUserInternal = internalMutation({
     if (!skill) throw new ConvexError("Skill report not found");
 
     const now = Date.now();
-    const previousStatus = skillReport.status ?? "open";
-    assertArtifactReportTransition(previousStatus, args.status);
+    const previousStatus = readArtifactReportStatus(skillReport.status);
+    const nextStatus = args.status;
+    assertArtifactReportTransition(previousStatus, nextStatus);
     const wasOpen = previousStatus === "open";
-    const willBeOpen = args.status === "open";
+    const willBeOpen = nextStatus === "open";
     const note = args.note?.trim();
-    if (!willBeOpen && !note) throw new ConvexError("Triage note required.");
+    if (!willBeOpen && !note) throw new ConvexError("Review note required.");
     const finalAction = args.finalAction ?? "none";
-    assertArtifactReportFinalAction(args.status, finalAction, ["hide"]);
+    assertArtifactReportFinalAction(nextStatus, finalAction, ["hide"]);
 
     await ctx.db.patch(skillReport._id, {
-      status: args.status,
+      status: nextStatus,
       triagedAt: willBeOpen ? undefined : now,
       triagedBy: willBeOpen ? undefined : actor._id,
       triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
@@ -3349,7 +3351,7 @@ export const triageSkillReportForUserInternal = internalMutation({
       now,
     });
 
-    await recordSkillModerationEvent(ctx, {
+    await appendSkillModerationEventLog(ctx, {
       kind: "report",
       reportId: skillReport._id,
       actorUserId: actor._id,
@@ -3461,7 +3463,7 @@ export const resolveSkillAppealForUserInternal = internalMutation({
       now,
     });
 
-    await recordSkillModerationEvent(ctx, {
+    await appendSkillModerationEventLog(ctx, {
       kind: "appeal",
       appealId: appeal._id,
       actorUserId: actor._id,
@@ -3484,7 +3486,7 @@ export const resolveSkillAppealForUserInternal = internalMutation({
   },
 });
 
-export const listSkillModerationEventsInternal = internalQuery({
+export const listSkillModerationEventLogsInternal = internalQuery({
   args: {
     actorUserId: v.id("users"),
     kind: v.union(v.literal("report"), v.literal("appeal")),
@@ -3501,14 +3503,14 @@ export const listSkillModerationEventsInternal = internalQuery({
     if (args.kind === "report") {
       if (!args.reportId) throw new ConvexError("reportId required");
       return await ctx.db
-        .query("skillModerationEvents")
+        .query("skillModerationEventLogs")
         .withIndex("by_report_createdAt", (q) => q.eq("reportId", args.reportId))
         .order("asc")
         .take(limit);
     }
     if (!args.appealId) throw new ConvexError("appealId required");
     return await ctx.db
-      .query("skillModerationEvents")
+      .query("skillModerationEventLogs")
       .withIndex("by_appeal_createdAt", (q) => q.eq("appealId", args.appealId))
       .order("asc")
       .take(limit);

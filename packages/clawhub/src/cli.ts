@@ -424,7 +424,7 @@ registerCommand(skill, ["skill", "appeal"])
 
 registerCommand(skill, ["skill", "reports"], "moderator")
   .description("List skill reports for moderator review")
-  .option("--status <status>", "open|triaged|dismissed|all", "open")
+  .option("--status <status>", "open|confirmed|dismissed|all", "open")
   .option("--cursor <cursor>", "Resume cursor")
   .option(
     "--limit <n>",
@@ -441,9 +441,9 @@ registerCommand(skill, ["skill", "reports"], "moderator")
 registerCommand(skill, ["skill", "triage-report"], "moderator")
   .description("Resolve or reopen a skill report")
   .argument("<report-id>", "Skill report id")
-  .requiredOption("--status <status>", "open|triaged|dismissed")
+  .requiredOption("--status <status>", "open|confirmed|dismissed")
   .option("--action <action>", "Final action: none|hide")
-  .option("--note <text>", "Triage note; required unless reopening")
+  .option("--note <text>", "Review note; required unless reopening")
   .option("--json", "Output JSON")
   .action(async (reportId, options) => {
     const opts = await resolveGlobalOpts();
@@ -634,7 +634,7 @@ registerCommand(packageCmd, ["package", "resolve-appeal"], "moderator")
 
 registerCommand(packageCmd, ["package", "reports"], "moderator")
   .description("List package reports for moderator review")
-  .option("--status <status>", "open|triaged|dismissed|all", "open")
+  .option("--status <status>", "open|confirmed|dismissed|all", "open")
   .option("--cursor <cursor>", "Resume cursor")
   .option(
     "--limit <n>",
@@ -651,9 +651,9 @@ registerCommand(packageCmd, ["package", "reports"], "moderator")
 registerCommand(packageCmd, ["package", "triage-report"], "moderator")
   .description("Resolve or reopen a package report")
   .argument("<report-id>", "Package report id")
-  .requiredOption("--status <status>", "open|triaged|dismissed")
+  .requiredOption("--status <status>", "open|confirmed|dismissed")
   .option("--action <action>", "Final action: none|quarantine|revoke")
-  .option("--note <text>", "Triage note; required unless reopening")
+  .option("--note <text>", "Review note; required unless reopening")
   .option("--json", "Output JSON")
   .action(async (reportId, options) => {
     const opts = await resolveGlobalOpts();
