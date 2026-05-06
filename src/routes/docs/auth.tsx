@@ -27,6 +27,9 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
   const search = Route.useSearch() as { return_to?: string };
   const returnTo = normalizeDocsReturnTo(search.return_to);
   const callbackUrl = returnTo ? buildDocsAuthCallbackUrl(returnTo) : null;
+  const signInRedirectTo = returnTo
+    ? `/docs/auth?return_to=${encodeURIComponent(returnTo)}`
+    : undefined;
   const registry = useMemo(() => {
     if (typeof window !== "undefined") {
       return normalizeClawHubSiteOrigin(window.location.origin) ?? getClawHubSiteUrl();
@@ -76,7 +79,9 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
             </button>
           </p>
         ) : null}
-        <SignInButton disabled={isLoading}>Verify with GitHub</SignInButton>
+        <SignInButton redirectTo={signInRedirectTo} disabled={isLoading}>
+          Verify with GitHub
+        </SignInButton>
       </AuthFrame>
     );
   }

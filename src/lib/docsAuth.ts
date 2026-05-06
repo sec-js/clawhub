@@ -5,8 +5,6 @@ const allowedDocsOrigins = new Set([
   "http://127.0.0.1:4173",
 ]);
 
-const productionDocsOrigin = "https://documentation.openclaw.ai";
-
 export function normalizeDocsReturnTo(value?: string | null) {
   if (!value) return null;
   try {
@@ -23,9 +21,5 @@ export function buildDocsAuthCallbackUrl(returnTo: string) {
   const normalized = normalizeDocsReturnTo(returnTo);
   if (!normalized) return null;
   const url = new URL(normalized);
-  const callbackOrigin =
-    url.hostname === "localhost" || url.hostname === "127.0.0.1"
-      ? url.origin
-      : productionDocsOrigin;
-  return `${callbackOrigin}/ask-molty/auth/callback`;
+  return `${url.origin}/ask-molty/auth/callback`;
 }

@@ -15,12 +15,12 @@ describe("docs auth helpers", () => {
     expect(normalizeDocsReturnTo("javascript:alert(1)")).toBeNull();
   });
 
-  it("uses the production docs callback for public docs hosts", () => {
+  it("keeps callbacks on the same docs host", () => {
     expect(buildDocsAuthCallbackUrl("https://documentation.openclaw.ai/concepts/models")).toBe(
       "https://documentation.openclaw.ai/ask-molty/auth/callback",
     );
     expect(buildDocsAuthCallbackUrl("https://docs.openclaw.ai/concepts/models")).toBe(
-      "https://documentation.openclaw.ai/ask-molty/auth/callback",
+      "https://docs.openclaw.ai/ask-molty/auth/callback",
     );
   });
 

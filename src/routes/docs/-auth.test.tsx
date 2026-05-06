@@ -34,8 +34,14 @@ vi.mock("../../components/layout/Container", () => ({
 }));
 
 vi.mock("../../components/SignInButton", () => ({
-  SignInButton: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
+  SignInButton: ({
+    children,
+    redirectTo,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { redirectTo?: string }) => (
+    <button {...props} data-redirect-to={redirectTo}>
+      {children}
+    </button>
   ),
 }));
 
@@ -87,7 +93,9 @@ describe("DocsAuth", () => {
     render(<DocsAuth autoSubmit={false} />);
 
     expect(screen.getByRole("heading", { name: /verify with github/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /verify with github/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /verify with github/i }).dataset.redirectTo).toBe(
+      "/docs/auth?return_to=https%3A%2F%2Fdocumentation.openclaw.ai%2Fconcepts%2Fmodels",
+    );
   });
 
   it("rejects unsafe return URLs", () => {
