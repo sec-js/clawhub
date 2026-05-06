@@ -47,14 +47,66 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
+export function parseGitWorktreeList(text: string) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => line.slice("worktree ".length).trim())
+    .filter(Boolean);
+}
+
+function listGitWorktrees() {
+  const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  if (result.status !== 0 || typeof result.stdout !== "string") return [];
+  return parseGitWorktreeList(result.stdout);
+}
+
+export function buildEnvFileCandidates(options: {
+  explicit: string | null;
+  cwd: string;
+  worktrees?: string[];
+}) {
+  if (options.explicit) return [options.explicit];
+  const primaryWorktree = options.worktrees?.[0];
+  return [
+    ...DEFAULT_ENV_SOURCES,
+    ...(primaryWorktree && resolve(primaryWorktree) !== resolve(options.cwd)
+      ? [`${primaryWorktree}/.env.local`]
+      : []),
+  ];
+}
+
 function findEnvFile(explicit: string | null) {
-  const candidates = explicit ? [explicit] : DEFAULT_ENV_SOURCES;
+  const candidates = buildEnvFileCandidates({
+    explicit,
+    cwd: process.cwd(),
+    worktrees: explicit ? [] : listGitWorktrees(),
+  });
   return candidates
     .map((candidate) => resolve(candidate))
     .find((candidate) => existsSync(candidate));
 }
 
-function parseEnv(text: string) {
+function stripInlineComment(value: string) {
+  let quote: '"' | "'" | null = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const previous = value[index - 1];
+    if ((char === '"' || char === "'") && previous !== "\\") {
+      quote = quote === char ? null : (quote ?? char);
+      continue;
+    }
+    if (char === "#" && quote === null && (index === 0 || /\s/.test(previous ?? ""))) {
+      return value.slice(0, index).trimEnd();
+    }
+  }
+  return value;
+}
+
+export function parseEnv(text: string) {
   const env: Record<string, string> = {};
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -62,7 +114,7 @@ function parseEnv(text: string) {
     const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
     if (!match) continue;
     const [, key, rawValue] = match;
-    let value = rawValue.trim();
+    let value = stripInlineComment(rawValue.trim());
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
@@ -170,7 +222,7 @@ async function main() {
   const envFile = findEnvFile(options.envFile);
   if (!envFile) {
     console.error(
-      "Could not find .env.local. Pass --env-file <path> or set CLAWHUB_ENV_FILE to a shared local env file.",
+      "Could not find .env.local in this checkout or the primary git worktree. Pass --env-file <path> or set CLAWHUB_ENV_FILE to a shared local env file.",
     );
     process.exit(1);
   }
@@ -212,4 +264,6 @@ async function main() {
   process.exit(await waitForExit(vite));
 }
 
-await main();
+if (import.meta.main) {
+  await main();
+}
