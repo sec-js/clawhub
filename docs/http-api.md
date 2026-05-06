@@ -17,11 +17,9 @@ OpenAPI: `/api/v1/openapi.json`.
 
 Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
 
-Web slug shortcuts resolve across registry families. Root paths matching
-official OpenClaw extension slugs, such as `/codex` or `/anthropic`, redirect to
-the mapped OpenClaw plugin package. Other root paths may redirect to a canonical
-skill page. Owner-qualified OpenClaw extension paths such as `/openclaw/codex`
-also redirect to the plugin listing.
+Web slug shortcuts resolve across registry families. See `docs/slug-routing.md`
+for the route precedence, collision policy, and official OpenClaw extension
+alias contract.
 
 ## Rate limits
 
