@@ -1,6 +1,9 @@
-import type { Value } from "convex/values";
+import { ConvexError, type Value } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+
+export type ArtifactReportStatus = "open" | "triaged" | "dismissed";
+export type ArtifactAppealStatus = "open" | "accepted" | "rejected";
 
 type BaseArtifactModerationEventInput = {
   kind: "report" | "appeal";
@@ -23,6 +26,86 @@ type PackageModerationEventInput = BaseArtifactModerationEventInput & {
   reportId?: Id<"packageReports">;
   appealId?: Id<"packageAppeals">;
 };
+
+const reportStatusTransitions = {
+  open: ["triaged", "dismissed"],
+  triaged: ["open"],
+  dismissed: ["open"],
+} satisfies Record<ArtifactReportStatus, ArtifactReportStatus[]>;
+
+const appealStatusTransitions = {
+  open: ["accepted", "rejected"],
+  accepted: ["open"],
+  rejected: ["open"],
+} satisfies Record<ArtifactAppealStatus, ArtifactAppealStatus[]>;
+
+function assertAllowedStatusTransition<TStatus extends string>(
+  kind: "report" | "appeal",
+  previousStatus: TStatus,
+  nextStatus: TStatus,
+  transitions: Record<TStatus, readonly TStatus[]>,
+) {
+  if (transitions[previousStatus]?.includes(nextStatus)) return;
+  throw new ConvexError(
+    `Invalid ${kind} status transition from ${previousStatus} to ${nextStatus}. Reopen the case before recording a different outcome.`,
+  );
+}
+
+export function assertArtifactReportTransition(
+  previousStatus: ArtifactReportStatus | undefined,
+  nextStatus: ArtifactReportStatus,
+) {
+  assertAllowedStatusTransition(
+    "report",
+    previousStatus ?? "open",
+    nextStatus,
+    reportStatusTransitions,
+  );
+}
+
+export function assertArtifactAppealTransition(
+  previousStatus: ArtifactAppealStatus | undefined,
+  nextStatus: ArtifactAppealStatus,
+) {
+  assertAllowedStatusTransition(
+    "appeal",
+    previousStatus ?? "open",
+    nextStatus,
+    appealStatusTransitions,
+  );
+}
+
+export function assertArtifactReportFinalAction<TAction extends string>(
+  status: ArtifactReportStatus,
+  finalAction: TAction | "none",
+  allowedResolvedActions: readonly TAction[],
+) {
+  if (finalAction === "none") return;
+  if (status === "open") {
+    throw new ConvexError("Reopened reports cannot apply a final action.");
+  }
+  if (status === "dismissed") {
+    throw new ConvexError("Dismissed reports cannot apply a final action.");
+  }
+  if (allowedResolvedActions.includes(finalAction)) return;
+  throw new ConvexError(`Unsupported report final action: ${finalAction}.`);
+}
+
+export function assertArtifactAppealFinalAction<TAction extends string>(
+  status: ArtifactAppealStatus,
+  finalAction: TAction | "none",
+  allowedAcceptedActions: readonly TAction[],
+) {
+  if (finalAction === "none") return;
+  if (status === "open") {
+    throw new ConvexError("Reopened appeals cannot apply a final action.");
+  }
+  if (status === "rejected") {
+    throw new ConvexError("Rejected appeals cannot apply a final action.");
+  }
+  if (allowedAcceptedActions.includes(finalAction)) return;
+  throw new ConvexError(`Unsupported appeal final action: ${finalAction}.`);
+}
 
 export async function recordSkillModerationEvent(
   ctx: MutationCtx,

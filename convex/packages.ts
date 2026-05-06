@@ -31,7 +31,13 @@ import {
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
-import { recordPackageModerationEvent } from "./lib/artifactModeration";
+import {
+  assertArtifactAppealFinalAction,
+  assertArtifactAppealTransition,
+  assertArtifactReportFinalAction,
+  assertArtifactReportTransition,
+  recordPackageModerationEvent,
+} from "./lib/artifactModeration";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import {
@@ -2658,17 +2664,14 @@ export const triagePackageReportForUserInternal = internalMutation({
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package report not found");
 
     const now = Date.now();
-    const wasOpen = report.status === "open";
+    const previousStatus = report.status ?? "open";
+    assertArtifactReportTransition(previousStatus, args.status);
+    const wasOpen = previousStatus === "open";
     const willBeOpen = args.status === "open";
     const note = args.note?.trim();
     if (!willBeOpen && !note) throw new ConvexError("Triage note required.");
     const finalAction = args.finalAction ?? "none";
-    if (willBeOpen && finalAction !== "none") {
-      throw new ConvexError("Reopened reports cannot apply a final action.");
-    }
-    if (args.status === "dismissed" && finalAction !== "none") {
-      throw new ConvexError("Dismissed reports cannot apply a final action.");
-    }
+    assertArtifactReportFinalAction(args.status, finalAction, ["quarantine", "revoke"]);
 
     await ctx.db.patch(report._id, {
       status: args.status,
@@ -2990,14 +2993,10 @@ export const resolvePackageAppealForUserInternal = internalMutation({
 
     const note = args.note?.trim();
     const isOpen = args.status === "open";
+    assertArtifactAppealTransition(appeal.status, args.status);
     if (!isOpen && !note) throw new ConvexError("Resolution note required.");
     const finalAction = args.finalAction ?? "none";
-    if (isOpen && finalAction !== "none") {
-      throw new ConvexError("Reopened appeals cannot apply a final action.");
-    }
-    if (args.status === "rejected" && finalAction !== "none") {
-      throw new ConvexError("Rejected appeals cannot apply a final action.");
-    }
+    assertArtifactAppealFinalAction(args.status, finalAction, ["approve"]);
     const now = Date.now();
 
     await ctx.db.patch(appeal._id, {
