@@ -4556,6 +4556,68 @@ describe("package scan backfill", () => {
     ]);
   });
 
+  it("normalizes legacy package release timestamps for the moderation queue", async () => {
+    const result = await listPackageModerationQueueInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packages:demo") {
+              return {
+                ...makePackageDoc(),
+                _id: "packages:demo",
+                name: "@scope/demo",
+                displayName: "Demo",
+                family: "code-plugin",
+                channel: "community",
+                isOfficial: false,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        ...makeReleaseDoc({
+                          _id: "packageReleases:legacy",
+                          _creationTime: 321,
+                          packageId: "packages:demo",
+                          createdAt: undefined,
+                          manualModeration: {
+                            state: "quarantined",
+                            reason: "manual review",
+                            reviewerUserId: "users:moderator",
+                            updatedAt: 2,
+                          },
+                        }),
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:moderator", limit: 10, status: "manual" },
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        releaseId: "packageReleases:legacy",
+        createdAt: 321,
+        moderationState: "quarantined",
+      }),
+    ]);
+  });
+
   it("dry-runs package artifact kind backfill without patching releases", async () => {
     const patch = vi.fn();
     const result = await backfillPackageArtifactKindsInternalHandler(

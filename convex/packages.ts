@@ -199,6 +199,9 @@ type PublicPackageListItem = {
   verificationTier: PackageVerificationTier | null;
 };
 type PackageReleaseScanStatus = ReturnType<typeof resolvePackageReleaseScanStatus>;
+type PackageReleaseModerationQueueDoc = Omit<Doc<"packageReleases">, "createdAt"> & {
+  createdAt?: number;
+};
 type PackageReportStatus = "open" | "triaged" | "dismissed";
 type PackageModerationQueueItem = {
   packageId: Id<"packages">;
@@ -335,7 +338,7 @@ function isReservedPackagePlaceholder(pkg: PackageDoc | null | undefined) {
 }
 
 function getPackageModerationQueueReasons(
-  release: Doc<"packageReleases">,
+  release: Pick<Doc<"packageReleases">, "manualModeration" | "staticScan" | "vtAnalysis">,
   scanStatus: PackageReleaseScanStatus,
   reportCount = 0,
 ) {
@@ -379,9 +382,13 @@ function shouldIncludeReleaseInModerationQueue(
   );
 }
 
+function getPackageReleaseCreatedAt(release: PackageReleaseModerationQueueDoc) {
+  return typeof release.createdAt === "number" ? release.createdAt : release._creationTime;
+}
+
 function toPackageModerationQueueItem(
   pkg: Doc<"packages">,
-  release: Doc<"packageReleases">,
+  release: PackageReleaseModerationQueueDoc,
 ): PackageModerationQueueItem {
   const scanStatus = resolvePackageReleaseScanStatus(release);
   const reportCount = pkg.reportCount ?? 0;
@@ -399,7 +406,7 @@ function toPackageModerationQueueItem(
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     version: release.version,
-    createdAt: release.createdAt,
+    createdAt: getPackageReleaseCreatedAt(release),
     artifactKind: release.artifactKind ?? null,
     scanStatus,
     moderationState: release.manualModeration?.state ?? null,
