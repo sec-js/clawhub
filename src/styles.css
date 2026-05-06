@@ -7749,6 +7749,7 @@ code {
   max-width: var(--page-max);
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-7);
+  --browse-sticky-top: calc(128px + var(--space-4));
 }
 
 .browse-page-narrow {
@@ -7868,13 +7869,13 @@ code {
 
 .browse-sidebar {
   position: sticky;
-  top: 90px;
+  top: var(--browse-sticky-top);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   padding-right: 16px;
   border-right: 1px solid var(--line);
-  max-height: calc(100vh - 100px);
+  max-height: calc(100vh - var(--browse-sticky-top) - var(--space-4));
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -8037,6 +8038,7 @@ code {
 
   .browse-page {
     padding: 16px 16px 40px;
+    --browse-sticky-top: calc(76px + var(--space-4));
   }
 
   .browse-page-search {
