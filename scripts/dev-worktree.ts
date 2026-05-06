@@ -13,6 +13,7 @@ type Options = {
 
 const DEFAULT_ENV_SOURCES = [".env.local"];
 const CONVEX_START_TIMEOUT_MS = 120_000;
+const CONVEX_FUNCTIONS_READY_TIMEOUT_MS = 120_000;
 const REACHABILITY_POLL_MS = 500;
 const managedChildren = new Set<ChildProcess>();
 
@@ -153,6 +154,57 @@ function runSync(command: string, args: string[], extraEnv: Record<string, strin
   );
 }
 
+function runSyncBuffered(
+  command: string,
+  args: string[],
+  extraEnv: Record<string, string | undefined>,
+) {
+  const result = spawnSync(command, args, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...process.env, ...extraEnv },
+  });
+
+  return {
+    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+    status: result.status ?? 1,
+  };
+}
+
+function writeBufferedOutput(output: string) {
+  if (output) process.stdout.write(output);
+}
+
+export function isConvexFunctionUnavailableOutput(output: string) {
+  return (
+    output.includes("Could not find function for") &&
+    output.includes("Did you forget to run `npx convex dev`")
+  );
+}
+
+async function runConvexFunctionWhenReady(args: string[]) {
+  const startedAt = Date.now();
+
+  while (true) {
+    const result = runSyncBuffered("bunx", args, {});
+    if (result.status === 0) {
+      writeBufferedOutput(result.output);
+      return 0;
+    }
+
+    if (
+      !isConvexFunctionUnavailableOutput(result.output) ||
+      Date.now() - startedAt >= CONVEX_FUNCTIONS_READY_TIMEOUT_MS
+    ) {
+      writeBufferedOutput(result.output);
+      return result.status;
+    }
+
+    console.log("Convex functions are not queryable yet; retrying...");
+    await sleep(REACHABILITY_POLL_MS);
+  }
+}
+
 function spawnManaged(command: string, args: string[]) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
@@ -245,18 +297,27 @@ async function main() {
 
   if (options.seed) {
     console.log("Seeding sample skills...");
-    const seedStatus = runSync("bunx", ["convex", "run", "--no-push", "devSeed:seedNixSkills"], {});
+    const seedStatus = await runConvexFunctionWhenReady([
+      "convex",
+      "run",
+      "--no-push",
+      "devSeed:seedNixSkills",
+    ]);
     if (seedStatus !== 0) process.exit(seedStatus);
 
-    const statsStatus = runSync(
-      "bunx",
-      ["convex", "run", "--no-push", "statsMaintenance:updateGlobalStatsAction"],
-      {},
-    );
+    const statsStatus = await runConvexFunctionWhenReady([
+      "convex",
+      "run",
+      "--no-push",
+      "statsMaintenance:updateGlobalStatsAction",
+    ]);
     if (statsStatus !== 0) process.exit(statsStatus);
   }
 
-  if (options.seedOnly) return;
+  if (options.seedOnly) {
+    stopManagedChildren();
+    return;
+  }
 
   console.log(`Starting ClawHub from ${process.cwd()}`);
   console.log(`Using env file: ${envFile}`);
