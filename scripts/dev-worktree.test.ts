@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildEnvFileCandidates, parseEnv, parseGitWorktreeList } from "./dev-worktree";
+import {
+  buildEnvFileCandidates,
+  isConvexFunctionUnavailableOutput,
+  parseEnv,
+  parseGitWorktreeList,
+} from "./dev-worktree";
 
 describe("dev-worktree helpers", () => {
   it("parses env files without treating inline comments as values", () => {
@@ -63,5 +68,17 @@ HEAD def456
 branch refs/heads/feature
 `),
     ).toEqual(["/Users/me/Git/openclaw/clawhub", "/tmp/worktrees/feature"]);
+  });
+
+  it("recognizes Convex functions that are not queryable yet", () => {
+    expect(
+      isConvexFunctionUnavailableOutput(`
+        Failed to run function "devSeed:seedNixSkills":
+        Could not find function for 'devSeed:seedNixSkills'. Did you forget to run \`npx convex dev\`?
+        No functions found.
+      `),
+    ).toBe(true);
+
+    expect(isConvexFunctionUnavailableOutput("AUTH_GITHUB_ID is required")).toBe(false);
   });
 });
