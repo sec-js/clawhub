@@ -25,7 +25,7 @@ Edit `.env.local` with the following values for **local Convex**:
 ```bash
 # Frontend
 VITE_CONVEX_URL=http://127.0.0.1:3210
-VITE_CONVEX_SITE_URL=http://127.0.0.1:3211
+VITE_CONVEX_SITE_URL=http://127.0.0.1:3210
 SITE_URL=http://localhost:3000
 
 # Deployment used by `bunx convex dev`
@@ -36,7 +36,7 @@ CONVEX_DEPLOYMENT=anonymous:anonymous-clawhub
 
 1. Go to [github.com/settings/developers](https://github.com/settings/developers) and create a new OAuth App.
 2. Set **Homepage URL** to `http://localhost:3000`.
-3. Set **Authorization callback URL** to `http://127.0.0.1:3211/api/auth/callback/github`.
+3. Set **Authorization callback URL** to `http://127.0.0.1:3210/api/auth/callback/github`.
 4. Copy the Client ID and generate a Client Secret.
 
 ### Run the Convex backend
@@ -75,33 +75,13 @@ bun run dev -- --port 3000
 
 Change the port if 3000 is already in use, and update `SITE_URL` in both `.env.local` and the Convex backend (`bunx convex env set SITE_URL ...`) to match.
 
-For detached Codex worktrees or sibling worktrees, use the worktree helper:
-
-```bash
-bun run dev:worktree
-```
-
-It installs missing dependencies, loads `.env.local`, starts local Convex when the configured
-backend is not already reachable, and then starts the preview server. Override the env source or port with:
-
-```bash
-bun run dev:worktree -- --env-file /path/to/.env.local --port 3001
-```
-
-You can also set `CLAWHUB_ENV_FILE=/path/to/.env.local` if your Codex worktrees should share a
-local env file outside the worktree.
-
-Codex app worktrees use the checked-in `.codex/environments/environment.toml` local environment.
-When you start a new Codex worktree with this local environment, Codex runs `bun install` first.
-The top-bar actions then expose `Run` (`bun run dev:worktree`), `Convex Dev`, and `Seed Dev DB`.
-
 ### Seed the database
 
 Populate sample data so the UI isn't empty:
 
 ```bash
 # 3 sample skills (padel, gohome, xuezh)
-bun run seed:dev
+bunx convex run --no-push devSeed:seedNixSkills
 
 # 50 extra skills for pagination testing (optional)
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
