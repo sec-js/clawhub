@@ -34,6 +34,7 @@ import { Route as PluginsNameRouteImport } from './routes/plugins/$name'
 import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
+import { Route as DocsAuthRouteImport } from './routes/docs/auth'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as PluginsScopeNameRouteImport } from './routes/plugins/$scope/$name'
@@ -168,6 +169,11 @@ const OrgsHandleRoute = OrgsHandleRouteImport.update({
   path: '/orgs/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsAuthRoute = DocsAuthRouteImport.update({
+  id: '/docs/auth',
+  path: '/docs/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CliAuthRoute = CliAuthRouteImport.update({
   id: '/cli/auth',
   path: '/cli/auth',
@@ -228,6 +234,7 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/docs/auth': typeof DocsAuthRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -263,6 +270,7 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/docs/auth': typeof DocsAuthRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -299,6 +307,7 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/docs/auth': typeof DocsAuthRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -336,6 +345,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/docs/auth'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/docs/auth'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -406,6 +417,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/docs/auth'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -442,6 +454,7 @@ export interface RootRouteChildren {
   UploadRoute: typeof UploadRoute
   OwnerSlugRoute: typeof OwnerSlugRouteWithChildren
   CliAuthRoute: typeof CliAuthRoute
+  DocsAuthRoute: typeof DocsAuthRoute
   OrgsHandleRoute: typeof OrgsHandleRoute
   PackagesNameRoute: typeof PackagesNameRoute
   PackagesNewRoute: typeof PackagesNewRoute
@@ -635,6 +648,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs/auth': {
+      id: '/docs/auth'
+      path: '/docs/auth'
+      fullPath: '/docs/auth'
+      preLoaderRoute: typeof DocsAuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cli/auth': {
       id: '/cli/auth'
       path: '/cli/auth'
@@ -747,6 +767,7 @@ const rootRouteChildren: RootRouteChildren = {
   UploadRoute: UploadRoute,
   OwnerSlugRoute: OwnerSlugRouteWithChildren,
   CliAuthRoute: CliAuthRoute,
+  DocsAuthRoute: DocsAuthRoute,
   OrgsHandleRoute: OrgsHandleRoute,
   PackagesNameRoute: PackagesNameRoute,
   PackagesNewRoute: PackagesNewRoute,

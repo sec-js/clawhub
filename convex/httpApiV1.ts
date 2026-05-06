@@ -1,4 +1,5 @@
 import { httpAction } from "./functions";
+import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
 import {
   listBundlePluginsV1Handler,
   listCodePluginsV1Handler,
@@ -44,6 +45,7 @@ export const mintPublishTokenV1Http = httpAction(mintPublishTokenV1Handler);
 export const npmMirrorGetHttp = httpAction(npmMirrorGetHandler);
 export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
+export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
 export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler);
@@ -79,6 +81,7 @@ export const __handlers = {
   npmMirrorGetHandler,
   listCodePluginsV1Handler,
   listBundlePluginsV1Handler,
+  verifyDocsSessionV1Handler,
   searchSkillsV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,

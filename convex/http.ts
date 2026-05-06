@@ -42,6 +42,7 @@ import {
   transfersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
+  verifyDocsSessionV1Http,
   whoamiV1Http,
 } from "./httpApiV1";
 import { preflightHandler } from "./httpPreflight";
@@ -186,6 +187,12 @@ http.route({
   path: ApiRoutes.whoami,
   method: "GET",
   handler: whoamiV1Http,
+});
+
+http.route({
+  path: "/api/v1/docs/session/verify",
+  method: "GET",
+  handler: verifyDocsSessionV1Http,
 });
 
 http.route({
