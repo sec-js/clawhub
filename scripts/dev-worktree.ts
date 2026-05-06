@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -15,6 +15,9 @@ const DEFAULT_ENV_SOURCES = [
   ".env.local",
   "/Users/patrickerichsen/Git/openclaw/clawhub/.env.local",
 ];
+const CONVEX_START_TIMEOUT_MS = 120_000;
+const REACHABILITY_POLL_MS = 500;
+const managedChildren = new Set<ChildProcess>();
 
 function parseArgs(argv: string[]): Options {
   const options: Options = {
@@ -91,7 +94,7 @@ async function isReachable(url: string) {
   }
 }
 
-function run(command: string, args: string[], extraEnv: Record<string, string | undefined>) {
+function runSync(command: string, args: string[], extraEnv: Record<string, string | undefined>) {
   return (
     spawnSync(command, args, {
       cwd: process.cwd(),
@@ -99,6 +102,70 @@ function run(command: string, args: string[], extraEnv: Record<string, string | 
       stdio: "inherit",
     }).status ?? 1
   );
+}
+
+function spawnManaged(command: string, args: string[]) {
+  const child = spawn(command, args, {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: "inherit",
+  });
+  managedChildren.add(child);
+  child.once("exit", () => managedChildren.delete(child));
+  return child;
+}
+
+function stopManagedChildren() {
+  for (const child of managedChildren) {
+    if (!child.killed) child.kill("SIGTERM");
+  }
+}
+
+function waitForExit(child: ChildProcess) {
+  return new Promise<number>((resolve) => {
+    child.once("exit", (code, signal) => {
+      if (typeof code === "number") {
+        resolve(code);
+      } else {
+        resolve(signal === "SIGINT" ? 130 : 1);
+      }
+    });
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitUntilReachable(url: string, timeoutMs: number) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isReachable(url)) return true;
+    await sleep(REACHABILITY_POLL_MS);
+  }
+  return false;
+}
+
+async function ensureConvex(convexUrl: string) {
+  if (await isReachable(convexUrl)) return;
+
+  console.log(`Convex is not reachable at ${convexUrl}.`);
+  console.log("Starting local Convex with: bunx convex dev --typecheck=disable");
+  const convex = spawnManaged("bunx", ["convex", "dev", "--typecheck=disable"]);
+
+  if (!(await waitUntilReachable(convexUrl, CONVEX_START_TIMEOUT_MS))) {
+    stopManagedChildren();
+    console.error(`Convex did not become reachable at ${convexUrl}.`);
+    console.error("If Convex is prompting for setup, finish that setup and rerun this command.");
+    process.exit(await waitForExit(convex));
+  }
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    stopManagedChildren();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  });
 }
 
 async function main() {
@@ -121,24 +188,18 @@ async function main() {
 
   if (!existsSync("node_modules/.bin/vite")) {
     console.log("Installing dependencies for this worktree...");
-    const installStatus = run("bun", ["install"], {});
+    const installStatus = runSync("bun", ["install"], {});
     if (installStatus !== 0) process.exit(installStatus);
   }
 
-  const convexReady = await isReachable(convexUrl);
-  if (!convexReady) {
-    console.error(`Convex is not reachable at ${convexUrl}.`);
-    console.error("Start the local backend first with: bunx convex dev --typecheck=disable");
-    console.error(`Using env file: ${envFile}`);
-    process.exit(1);
-  }
+  await ensureConvex(convexUrl);
 
   if (options.seed) {
     console.log("Seeding sample skills...");
-    const seedStatus = run("bunx", ["convex", "run", "--no-push", "devSeed:seedNixSkills"], {});
+    const seedStatus = runSync("bunx", ["convex", "run", "--no-push", "devSeed:seedNixSkills"], {});
     if (seedStatus !== 0) process.exit(seedStatus);
 
-    const statsStatus = run(
+    const statsStatus = runSync(
       "bunx",
       ["convex", "run", "--no-push", "statsMaintenance:updateGlobalStatsAction"],
       {},
@@ -150,7 +211,8 @@ async function main() {
 
   console.log(`Starting ClawHub from ${process.cwd()}`);
   console.log(`Using env file: ${envFile}`);
-  process.exit(run("bun", ["--bun", "vite", "dev", "--port", options.port], {}));
+  const vite = spawnManaged("bun", ["--bun", "vite", "dev", "--port", options.port]);
+  process.exit(await waitForExit(vite));
 }
 
 await main();

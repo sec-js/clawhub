@@ -82,8 +82,8 @@ bun run dev:worktree
 ```
 
 It installs missing dependencies, loads `.env.local` from the current checkout or the canonical
-`/Users/patrickerichsen/Git/openclaw/clawhub/.env.local`, verifies that the configured Convex
-backend is reachable, and then starts the preview server. Override the env source or port with:
+`/Users/patrickerichsen/Git/openclaw/clawhub/.env.local`, starts local Convex when the configured
+backend is not already reachable, and then starts the preview server. Override the env source or port with:
 
 ```bash
 bun run dev:worktree -- --env-file /path/to/.env.local --port 3001
