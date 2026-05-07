@@ -663,6 +663,7 @@ describe("package commands", () => {
       status: "accepted",
       note: "scanner finding cleared",
       action: "approve",
+      yes: true,
     });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
@@ -682,6 +683,7 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith(
       "OK. Appeal packageAppeals:1 set to accepted; action approve.",
     );
+    expect(mockLog).toHaveBeenCalledWith("  - Approve the package release.");
   });
 
   it("lists package reports", async () => {
@@ -732,6 +734,7 @@ describe("package commands", () => {
       status: "confirmed",
       note: "handled",
       action: "quarantine",
+      yes: true,
     });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
@@ -751,6 +754,7 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith(
       "OK. Report packageReports:1 set to confirmed; action quarantine.",
     );
+    expect(mockLog).toHaveBeenCalledWith("  - Quarantine the package release.");
   });
 
   it("shows package moderation status", async () => {

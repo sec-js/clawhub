@@ -444,6 +444,7 @@ registerCommand(skill, ["skill", "triage-report"], "moderator")
   .requiredOption("--status <status>", "open|confirmed|dismissed")
   .option("--action <action>", "Final action: none|hide")
   .option("--note <text>", "Review note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (reportId, options) => {
     const opts = await resolveGlobalOpts();
@@ -472,6 +473,7 @@ registerCommand(skill, ["skill", "resolve-appeal"], "moderator")
   .requiredOption("--status <status>", "open|accepted|rejected")
   .option("--action <action>", "Final action: none|restore")
   .option("--note <text>", "Resolution note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (appealId, options) => {
     const opts = await resolveGlobalOpts();
@@ -626,6 +628,7 @@ registerCommand(packageCmd, ["package", "resolve-appeal"], "moderator")
   .requiredOption("--status <status>", "open|accepted|rejected")
   .option("--action <action>", "Final action: none|approve")
   .option("--note <text>", "Resolution note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (appealId, options) => {
     const opts = await resolveGlobalOpts();
@@ -654,6 +657,7 @@ registerCommand(packageCmd, ["package", "triage-report"], "moderator")
   .requiredOption("--status <status>", "open|confirmed|dismissed")
   .option("--action <action>", "Final action: none|quarantine|revoke")
   .option("--note <text>", "Review note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (reportId, options) => {
     const opts = await resolveGlobalOpts();

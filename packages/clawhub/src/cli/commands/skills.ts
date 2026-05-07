@@ -36,6 +36,11 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import {
+  appealModerationPlan,
+  presentModerationPlan,
+  reportModerationPlan,
+} from "./moderationPlan.js";
 
 type SkillReportOptions = {
   version?: string;
@@ -62,6 +67,7 @@ type SkillReportTriageOptions = {
   finalAction?: SkillReportFinalAction;
   note?: string;
   json?: boolean;
+  yes?: boolean;
 };
 
 type SkillAppealListOptions = {
@@ -77,6 +83,7 @@ type SkillAppealResolveOptions = {
   finalAction?: SkillAppealFinalAction;
   note?: string;
   json?: boolean;
+  yes?: boolean;
 };
 
 function normalizeSkillSlugOrFail(raw: string) {
@@ -607,10 +614,11 @@ export async function cmdTriageSkillReport(
 ) {
   const trimmed = reportId.trim();
   if (!trimmed) fail("Report id required");
-  const status = options.status?.trim();
-  if (!status || !["open", "confirmed", "dismissed"].includes(status)) {
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "confirmed", "dismissed"].includes(statusValue)) {
     fail("--status must be open, confirmed, or dismissed");
   }
+  const status = statusValue as SkillReportStatus;
   const finalAction = (options.finalAction ?? options.action)?.trim() as
     | SkillReportFinalAction
     | undefined;
@@ -622,6 +630,15 @@ export async function cmdTriageSkillReport(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    reportModerationPlan({
+      entityLabel: "skill",
+      reportId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
   const result = await apiRequest(
     registry,
     {
@@ -689,10 +706,11 @@ export async function cmdResolveSkillAppeal(
 ) {
   const trimmed = appealId.trim();
   if (!trimmed) fail("Appeal id required");
-  const status = options.status?.trim();
-  if (!status || !["open", "accepted", "rejected"].includes(status)) {
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "accepted", "rejected"].includes(statusValue)) {
     fail("--status must be open, accepted, or rejected");
   }
+  const status = statusValue as SkillAppealStatus;
   const finalAction = (options.finalAction ?? options.action)?.trim() as
     | SkillAppealFinalAction
     | undefined;
@@ -704,6 +722,15 @@ export async function cmdResolveSkillAppeal(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    appealModerationPlan({
+      entityLabel: "skill",
+      appealId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
   const result = await apiRequest(
     registry,
     {

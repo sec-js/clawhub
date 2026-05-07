@@ -354,6 +354,7 @@ describe("skill moderation commands", () => {
       status: "confirmed",
       note: "handled",
       action: "hide",
+      yes: true,
     });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
@@ -369,6 +370,7 @@ describe("skill moderation commands", () => {
     expect(mockLog).toHaveBeenCalledWith(
       "OK. Skill report skillReports:1 set to confirmed; action hide.",
     );
+    expect(mockLog).toHaveBeenCalledWith("  - Hide the skill from public availability.");
   });
 
   it("lists skill appeals", async () => {
@@ -417,6 +419,7 @@ describe("skill moderation commands", () => {
       status: "accepted",
       note: "scanner finding cleared",
       action: "restore",
+      yes: true,
     });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
@@ -432,6 +435,7 @@ describe("skill moderation commands", () => {
     expect(mockLog).toHaveBeenCalledWith(
       "OK. Skill appeal skillAppeals:1 set to accepted; action restore.",
     );
+    expect(mockLog).toHaveBeenCalledWith("  - Restore the skill to public availability.");
   });
 });
 

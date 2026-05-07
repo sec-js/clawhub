@@ -64,6 +64,11 @@ import {
   resolveLocalGitInfo,
   resolveSourceInput,
 } from "./github.js";
+import {
+  appealModerationPlan,
+  presentModerationPlan,
+  reportModerationPlan,
+} from "./moderationPlan.js";
 
 const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
@@ -176,6 +181,7 @@ type PackageAppealResolveOptions = {
   finalAction?: PackageAppealFinalAction;
   note?: string;
   json?: boolean;
+  yes?: boolean;
 };
 
 type PackageReportListOptions = {
@@ -191,6 +197,7 @@ type PackageReportTriageOptions = {
   finalAction?: PackageReportFinalAction;
   note?: string;
   json?: boolean;
+  yes?: boolean;
 };
 
 type PackageModerationStatusOptions = {
@@ -1240,10 +1247,11 @@ export async function cmdResolvePackageAppeal(
 ) {
   const trimmed = appealId.trim();
   if (!trimmed) fail("Appeal id required");
-  const status = options.status?.trim();
-  if (!status || !["open", "accepted", "rejected"].includes(status)) {
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "accepted", "rejected"].includes(statusValue)) {
     fail("--status must be open, accepted, or rejected");
   }
+  const status = statusValue as PackageAppealStatus;
   const finalAction = (options.finalAction ?? options.action)?.trim() as
     | PackageAppealFinalAction
     | undefined;
@@ -1255,6 +1263,15 @@ export async function cmdResolvePackageAppeal(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    appealModerationPlan({
+      entityLabel: "package",
+      appealId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
   const spinner = options.json ? null : createSpinner(`Updating appeal ${trimmed}`);
   try {
     const result = await apiRequest(
@@ -1340,10 +1357,11 @@ export async function cmdTriagePackageReport(
 ) {
   const trimmed = reportId.trim();
   if (!trimmed) fail("Report id required");
-  const status = options.status?.trim();
-  if (!status || !["open", "confirmed", "dismissed"].includes(status)) {
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "confirmed", "dismissed"].includes(statusValue)) {
     fail("--status must be open, confirmed, or dismissed");
   }
+  const status = statusValue as PackageReportStatus;
   const finalAction = (options.finalAction ?? options.action)?.trim() as
     | PackageReportFinalAction
     | undefined;
@@ -1355,6 +1373,15 @@ export async function cmdTriagePackageReport(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    reportModerationPlan({
+      entityLabel: "package",
+      reportId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
   const spinner = options.json ? null : createSpinner(`Updating report ${trimmed}`);
   try {
     const result = await apiRequest(
