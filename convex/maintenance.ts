@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
@@ -29,6 +29,14 @@ const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const DEFAULT_CAPABILITY_BACKFILL_DELAY_MS = 500;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+
+type ReportStatusBackfillStats = {
+  skillReportsScanned: number;
+  skillReportsPatched: number;
+  packageReportsScanned: number;
+  packageReportsPatched: number;
+  batches: number;
+};
 
 type BackfillStats = {
   skillsScanned: number;
@@ -2044,6 +2052,111 @@ export const backfillLatestSkillModeration: ReturnType<typeof action> = action({
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
     return await ctx.runMutation(internal.skills.backfillLatestSkillModerationInternal, args);
+  },
+});
+
+export async function backfillConfirmedReportStatusesInternalHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    batchSize?: number;
+    dryRun?: boolean;
+  },
+) {
+  const batchSize = clampInt(args.batchSize ?? 100, 1, 500);
+  const dryRun = args.dryRun ?? false;
+
+  const skillReports = await ctx.db
+    .query("skillReports")
+    .withIndex("by_status_createdAt", (q) => q.eq("status", "triaged"))
+    .order("asc")
+    .take(batchSize);
+  const packageReports = await ctx.db
+    .query("packageReports")
+    .withIndex("by_status_createdAt", (q) => q.eq("status", "triaged"))
+    .order("asc")
+    .take(batchSize);
+
+  if (!dryRun) {
+    for (const report of skillReports) {
+      await ctx.db.patch(report._id, { status: "confirmed" });
+    }
+    for (const report of packageReports) {
+      await ctx.db.patch(report._id, { status: "confirmed" });
+    }
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    hasMore: skillReports.length === batchSize || packageReports.length === batchSize,
+    stats: {
+      skillReportsScanned: skillReports.length,
+      skillReportsPatched: dryRun ? 0 : skillReports.length,
+      packageReportsScanned: packageReports.length,
+      packageReportsPatched: dryRun ? 0 : packageReports.length,
+    },
+  };
+}
+
+export const backfillConfirmedReportStatusesInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: backfillConfirmedReportStatusesInternalHandler,
+});
+
+// Normalize legacy report outcome rows after deploying the confirmed/dismissed
+// report status contract:
+//   npx convex run maintenance:backfillConfirmedReportStatuses '{"dryRun":true}' --prod
+//   npx convex run maintenance:backfillConfirmedReportStatuses '{"batchSize":100,"maxBatches":20}' --prod
+export const backfillConfirmedReportStatuses: ReturnType<typeof action> = action({
+  args: {
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+
+    const batchSize = clampInt(args.batchSize ?? 100, 1, 500);
+    const maxBatches = clampInt(args.maxBatches ?? 10, 1, 100);
+    const stats: ReportStatusBackfillStats = {
+      skillReportsScanned: 0,
+      skillReportsPatched: 0,
+      packageReportsScanned: 0,
+      packageReportsPatched: 0,
+      batches: 0,
+    };
+    let hasMore = false;
+
+    for (let i = 0; i < maxBatches; i += 1) {
+      const result = (await ctx.runMutation(
+        internal.maintenance.backfillConfirmedReportStatusesInternal,
+        {
+          batchSize,
+          dryRun: args.dryRun,
+        },
+      )) as {
+        hasMore: boolean;
+        stats: Omit<ReportStatusBackfillStats, "batches">;
+      };
+      stats.skillReportsScanned += result.stats.skillReportsScanned;
+      stats.skillReportsPatched += result.stats.skillReportsPatched;
+      stats.packageReportsScanned += result.stats.packageReportsScanned;
+      stats.packageReportsPatched += result.stats.packageReportsPatched;
+      stats.batches += 1;
+      hasMore = result.hasMore;
+      if (args.dryRun || !hasMore) break;
+    }
+
+    return {
+      ok: true as const,
+      dryRun: args.dryRun ?? false,
+      isDone: !hasMore,
+      stats,
+    };
   },
 });
 
