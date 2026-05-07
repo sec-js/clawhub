@@ -12,6 +12,7 @@ read_when:
 - Convex Auth + GitHub OAuth App.
 - GitHub is the only supported login provider.
 - Disabled/banned accounts are blocked during OAuth completion and should surface a user-facing reason instead of a generic auth failure.
+- If OAuth returns without creating a session, the UI should tell users that deleted, banned, or disabled ClawHub accounts cannot sign in instead of silently returning to a logged-out state.
 - Env vars:
   - `AUTH_GITHUB_ID`
   - `AUTH_GITHUB_SECRET`
