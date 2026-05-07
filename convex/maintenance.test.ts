@@ -21,7 +21,6 @@ vi.mock("./_generated/api", () => ({
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
       cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
-      backfillConfirmedReportStatusesInternal: Symbol("backfillConfirmedReportStatusesInternal"),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -40,7 +39,6 @@ vi.mock("./lib/skillSummary", () => ({
 
 const {
   backfillLatestVersionSummaryInternal,
-  backfillConfirmedReportStatusesInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
@@ -56,77 +54,6 @@ function makeBlob(text: string) {
 }
 
 describe("maintenance backfill", () => {
-  it("backfills legacy report triaged statuses to confirmed", async () => {
-    const patch = vi.fn();
-    const query = vi.fn((table: string) => {
-      const page =
-        table === "skillReports"
-          ? [{ _id: "skillReports:1" }, { _id: "skillReports:2" }]
-          : [{ _id: "packageReports:1" }];
-      return {
-        withIndex: vi.fn((_index: string, cb: (q: { eq: typeof vi.fn }) => unknown) => {
-          cb({ eq: vi.fn() });
-          return {
-            order: vi.fn(() => ({
-              take: vi.fn(async () => page),
-            })),
-          };
-        }),
-      };
-    });
-
-    const result = await backfillConfirmedReportStatusesInternalHandler(
-      { db: { query, patch } } as never,
-      { batchSize: 10 },
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      dryRun: false,
-      hasMore: false,
-      stats: {
-        skillReportsScanned: 2,
-        skillReportsPatched: 2,
-        packageReportsScanned: 1,
-        packageReportsPatched: 1,
-      },
-    });
-    expect(patch).toHaveBeenCalledWith("skillReports:1", { status: "confirmed" });
-    expect(patch).toHaveBeenCalledWith("skillReports:2", { status: "confirmed" });
-    expect(patch).toHaveBeenCalledWith("packageReports:1", { status: "confirmed" });
-  });
-
-  it("can dry-run the legacy report status backfill", async () => {
-    const patch = vi.fn();
-    const query = vi.fn(() => ({
-      withIndex: vi.fn((_index: string, cb: (q: { eq: typeof vi.fn }) => unknown) => {
-        cb({ eq: vi.fn() });
-        return {
-          order: vi.fn(() => ({
-            take: vi.fn(async () => [{ _id: "reports:1" }] as Array<{ _id: string }>),
-          })),
-        };
-      }),
-    }));
-
-    const result = await backfillConfirmedReportStatusesInternalHandler(
-      { db: { query, patch } } as never,
-      { batchSize: 1, dryRun: true },
-    );
-
-    expect(result).toMatchObject({
-      dryRun: true,
-      hasMore: true,
-      stats: {
-        skillReportsScanned: 1,
-        skillReportsPatched: 0,
-        packageReportsScanned: 1,
-        packageReportsPatched: 0,
-      },
-    });
-    expect(patch).not.toHaveBeenCalled();
-  });
-
   it("repairs summary + parsed by reparsing SKILL.md", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [

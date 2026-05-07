@@ -74,9 +74,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `packageModerationEventLogs`.
 - Public queries hide non-active moderation statuses; moderators can still access via
   moderator-only queries and unhide/restore/delete/ban.
-- Legacy report rows with `status: "triaged"` are normalized to `confirmed` by
-  `maintenance:backfillConfirmedReportStatuses`. Run a dry run after deploy,
-  then apply the backfill until `isDone` is true.
+- Legacy report rows with `status: "triaged"` are read as `confirmed` for
+  compatibility while new writes store `confirmed`.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
   active-but-flagged (`flagged.suspicious`) entries from browse/search results.
 
