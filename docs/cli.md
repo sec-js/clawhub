@@ -175,6 +175,80 @@ Stores your API token + cached registry URL.
 - Unhide a skill (owner, moderator, or admin).
 - Alias for `undelete`.
 
+### `skill report <slug>`
+
+- Authenticated command for reporting a skill to moderators.
+- Calls `POST /api/v1/skills/{slug}/report`.
+- Reports are skill-level, optionally tied to a version, and feed the skill
+  report queue.
+- Flags:
+  - `--version <version>`: optional skill version to attach to the report.
+  - `--reason <text>`: required report reason.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub skill report gifgrep --version 1.2.3 --reason "suspicious install step"
+```
+
+### `skill appeal <slug>`
+
+- Owner/publisher command for appealing skill moderation.
+- Calls `POST /api/v1/skills/{slug}/appeal`.
+- Appeals are accepted for hidden, removed, suspicious, malicious, or
+  scanner-flagged skill outcomes.
+- Flags:
+  - `--version <version>`: optional skill version to attach to the appeal.
+  - `--message <text>`: required appeal message.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub skill appeal gifgrep --message "the flagged command is documented setup"
+```
+
+### `skill reports`
+
+- Moderator/admin command for listing skill reports.
+- Calls `GET /api/v1/skills/-/reports`.
+- Flags:
+  - `--status open|confirmed|dismissed|all`: report state filter, default `open`.
+  - `--cursor <cursor>`: resume cursor from a previous page.
+  - `--limit <n>`: number of reports to show, max 200.
+  - `--json`: machine-readable output.
+
+### `skill triage-report <report-id>`
+
+- Moderator/admin command for resolving or reopening skill reports.
+- Calls `POST /api/v1/skills/-/reports/{reportId}/triage`.
+- Flags:
+  - `--status open|confirmed|dismissed`: required report state.
+  - `--note <text>`: required unless `--status open`.
+  - `--action none|hide`: optional final action; `hide` makes the skill unavailable.
+  - `--json`: machine-readable output.
+
+### `skill appeals`
+
+- Moderator/admin command for listing skill appeals.
+- Calls `GET /api/v1/skills/-/appeals`.
+- Flags:
+  - `--status open|accepted|rejected|all`: appeal state filter, default `open`.
+  - `--cursor <cursor>`: resume cursor from a previous page.
+  - `--limit <n>`: number of appeals to show, max 200.
+  - `--json`: machine-readable output.
+
+### `skill resolve-appeal <appeal-id>`
+
+- Moderator/admin command for accepting, rejecting, or reopening a skill appeal.
+- Calls `POST /api/v1/skills/-/appeals/{appealId}/resolve`.
+- Flags:
+  - `--status open|accepted|rejected`: required appeal state.
+  - `--note <text>`: required unless `--status open`.
+  - `--action none|restore`: optional final action; `restore` makes the skill available again.
+  - `--json`: machine-readable output.
+
 ### `skill rename <slug> <new-slug>`
 
 - Rename an owned skill and keep the previous slug as a redirect alias.
@@ -406,11 +480,10 @@ clawhub package appeals --status all --limit 50
 - Moderator/admin command for accepting, rejecting, or reopening a package
   appeal.
 - Calls `POST /api/v1/packages/appeals/{appealId}/resolve`.
-- Resolving an appeal does not automatically change release moderation state;
-  use `package moderate` to approve, quarantine, or revoke the artifact.
 - Flags:
   - `--status open|accepted|rejected`: required appeal state.
   - `--note <text>`: required unless `--status open`.
+  - `--action none|approve`: optional final action; `approve` clears the release block.
   - `--json`: machine-readable output.
 
 Example:
@@ -424,7 +497,7 @@ clawhub package resolve-appeal packageAppeals:abc --status rejected --note "stat
 - Moderator/admin command for listing package reports.
 - Calls `GET /api/v1/packages/reports`.
 - Flags:
-  - `--status open|triaged|dismissed|all`: report state filter, default `open`.
+  - `--status open|confirmed|dismissed|all`: report state filter, default `open`.
   - `--cursor <cursor>`: resume cursor from a previous page.
   - `--limit <n>`: number of reports to show, max 100.
   - `--json`: machine-readable output.
@@ -441,19 +514,20 @@ clawhub package reports --status all --limit 50
 - Moderator/admin command for resolving or reopening package reports.
 - Calls `POST /api/v1/packages/reports/{reportId}/triage`.
 - Flags:
-  - `--status open|triaged|dismissed`: required report state.
+  - `--status open|confirmed|dismissed`: required report state.
   - `--note <text>`: required unless `--status open`.
+  - `--action none|quarantine|revoke`: optional final action for the affected release.
   - `--json`: machine-readable output.
 
 Example:
 
 ```bash
-clawhub package triage-report packageReports:abc --status triaged --note "quarantined affected release"
+clawhub package triage-report packageReports:abc --status confirmed --note "quarantined affected release"
 ```
 
 ### `package moderation-status`
 
-- Owner/staff command for checking package moderation visibility.
+- Owner/moderator command for checking package moderation visibility.
 - Calls `GET /api/v1/packages/{name}/moderation`.
 - Shows current package scan state, open report count, latest release manual
   moderation state, download block state, and moderation reasons.
@@ -541,7 +615,7 @@ clawhub package migration-status @openclaw/example-plugin
 
 ### `package migrations`
 
-- Staff command for listing durable official plugin migration rows.
+- Moderator command for listing durable official plugin migration rows.
 - Calls `GET /api/v1/packages/migrations`.
 - Flags:
   - `--phase planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all`: phase filter, default `all`.

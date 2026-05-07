@@ -49,10 +49,16 @@ import {
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
 import {
+  cmdAppealSkill,
   cmdExplore,
   cmdInstall,
+  cmdListSkillAppeals,
+  cmdListSkillReports,
+  cmdReportSkill,
+  cmdResolveSkillAppeal,
   cmdList,
   cmdSearch,
+  cmdTriageSkillReport,
   cmdUninstall,
   cmdUpdate,
 } from "./cli/commands/skills.js";
@@ -394,6 +400,86 @@ registerCommand(skill, ["skill", "publish"])
     await cmdPublish(opts, folder, options);
   });
 
+registerCommand(skill, ["skill", "report"])
+  .description("Report a skill for moderator review")
+  .argument("<slug>", "Skill slug")
+  .option("--version <version>", "Skill version")
+  .requiredOption("--reason <text>", "Report reason")
+  .option("--json", "Output JSON")
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdReportSkill(opts, slug, options);
+  });
+
+registerCommand(skill, ["skill", "appeal"])
+  .description("Appeal moderation for a skill")
+  .argument("<slug>", "Skill slug")
+  .option("--version <version>", "Skill version")
+  .requiredOption("--message <text>", "Appeal message")
+  .option("--json", "Output JSON")
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdAppealSkill(opts, slug, options);
+  });
+
+registerCommand(skill, ["skill", "reports"], "moderator")
+  .description("List skill reports for moderator review")
+  .option("--status <status>", "open|confirmed|dismissed|all", "open")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option(
+    "--limit <n>",
+    "Number of reports to show (max 200)",
+    (value) => Number.parseInt(value, 10),
+    25,
+  )
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListSkillReports(opts, options);
+  });
+
+registerCommand(skill, ["skill", "triage-report"], "moderator")
+  .description("Resolve or reopen a skill report")
+  .argument("<report-id>", "Skill report id")
+  .requiredOption("--status <status>", "open|confirmed|dismissed")
+  .option("--action <action>", "Final action: none|hide")
+  .option("--note <text>", "Review note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
+  .option("--json", "Output JSON")
+  .action(async (reportId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdTriageSkillReport(opts, reportId, options);
+  });
+
+registerCommand(skill, ["skill", "appeals"], "moderator")
+  .description("List skill appeals for moderator review")
+  .option("--status <status>", "open|accepted|rejected|all", "open")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option(
+    "--limit <n>",
+    "Number of appeals to show (max 200)",
+    (value) => Number.parseInt(value, 10),
+    25,
+  )
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListSkillAppeals(opts, options);
+  });
+
+registerCommand(skill, ["skill", "resolve-appeal"], "moderator")
+  .description("Resolve or reopen a skill appeal")
+  .argument("<appeal-id>", "Skill appeal id")
+  .requiredOption("--status <status>", "open|accepted|rejected")
+  .option("--action <action>", "Final action: none|restore")
+  .option("--note <text>", "Resolution note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
+  .option("--json", "Output JSON")
+  .action(async (appealId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdResolveSkillAppeal(opts, appealId, options);
+  });
+
 const packageCmd = registerCommandGroup(program, ["package"]).description(
   "Browse and publish OpenClaw packages",
 );
@@ -540,7 +626,9 @@ registerCommand(packageCmd, ["package", "resolve-appeal"], "moderator")
   .description("Resolve or reopen a package appeal")
   .argument("<appeal-id>", "Package appeal id")
   .requiredOption("--status <status>", "open|accepted|rejected")
+  .option("--action <action>", "Final action: none|approve")
   .option("--note <text>", "Resolution note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (appealId, options) => {
     const opts = await resolveGlobalOpts();
@@ -549,7 +637,7 @@ registerCommand(packageCmd, ["package", "resolve-appeal"], "moderator")
 
 registerCommand(packageCmd, ["package", "reports"], "moderator")
   .description("List package reports for moderator review")
-  .option("--status <status>", "open|triaged|dismissed|all", "open")
+  .option("--status <status>", "open|confirmed|dismissed|all", "open")
   .option("--cursor <cursor>", "Resume cursor")
   .option(
     "--limit <n>",
@@ -566,8 +654,10 @@ registerCommand(packageCmd, ["package", "reports"], "moderator")
 registerCommand(packageCmd, ["package", "triage-report"], "moderator")
   .description("Resolve or reopen a package report")
   .argument("<report-id>", "Package report id")
-  .requiredOption("--status <status>", "open|triaged|dismissed")
-  .option("--note <text>", "Triage note; required unless reopening")
+  .requiredOption("--status <status>", "open|confirmed|dismissed")
+  .option("--action <action>", "Final action: none|quarantine|revoke")
+  .option("--note <text>", "Review note; required unless reopening")
+  .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (reportId, options) => {
     const opts = await resolveGlobalOpts();
@@ -575,7 +665,7 @@ registerCommand(packageCmd, ["package", "triage-report"], "moderator")
   });
 
 registerCommand(packageCmd, ["package", "moderation-status"])
-  .description("Show owner/staff package moderation status")
+  .description("Show owner/moderator package moderation status")
   .argument("<name>", "Package name")
   .option("--json", "Output JSON")
   .action(async (name, options) => {

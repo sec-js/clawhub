@@ -36,6 +36,7 @@ import {
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageAppealListStatus,
+  type PackageAppealFinalAction,
   type PackageAppealStatus,
   type PackageCapabilitySummary,
   type PackageCompatibility,
@@ -44,6 +45,7 @@ import {
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
   type PackageReportListStatus,
+  type PackageReportFinalAction,
   type PackageReportStatus,
   type PackageReleaseModerationState,
   type PackageTrustedPublisher,
@@ -62,6 +64,11 @@ import {
   resolveLocalGitInfo,
   resolveSourceInput,
 } from "./github.js";
+import {
+  appealModerationPlan,
+  presentModerationPlan,
+  reportModerationPlan,
+} from "./moderationPlan.js";
 
 const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
@@ -170,8 +177,11 @@ type PackageAppealListOptions = {
 
 type PackageAppealResolveOptions = {
   status?: PackageAppealStatus;
+  action?: PackageAppealFinalAction;
+  finalAction?: PackageAppealFinalAction;
   note?: string;
   json?: boolean;
+  yes?: boolean;
 };
 
 type PackageReportListOptions = {
@@ -183,8 +193,11 @@ type PackageReportListOptions = {
 
 type PackageReportTriageOptions = {
   status?: PackageReportStatus;
+  action?: PackageReportFinalAction;
+  finalAction?: PackageReportFinalAction;
   note?: string;
   json?: boolean;
+  yes?: boolean;
 };
 
 type PackageModerationStatusOptions = {
@@ -1234,15 +1247,31 @@ export async function cmdResolvePackageAppeal(
 ) {
   const trimmed = appealId.trim();
   if (!trimmed) fail("Appeal id required");
-  const status = options.status?.trim();
-  if (!status || !["open", "accepted", "rejected"].includes(status)) {
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "accepted", "rejected"].includes(statusValue)) {
     fail("--status must be open, accepted, or rejected");
+  }
+  const status = statusValue as PackageAppealStatus;
+  const finalAction = (options.finalAction ?? options.action)?.trim() as
+    | PackageAppealFinalAction
+    | undefined;
+  if (finalAction && !["none", "approve"].includes(finalAction)) {
+    fail("--action must be none or approve");
   }
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    appealModerationPlan({
+      entityLabel: "package",
+      appealId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
   const spinner = options.json ? null : createSpinner(`Updating appeal ${trimmed}`);
   try {
     const result = await apiRequest(
@@ -1254,6 +1283,7 @@ export async function cmdResolvePackageAppeal(
         body: {
           status,
           ...(note ? { note } : {}),
+          ...(finalAction ? { finalAction } : {}),
         },
       },
       ApiV1PackageAppealResolveResponseSchema,
@@ -1263,7 +1293,9 @@ export async function cmdResolvePackageAppeal(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
-    console.log(`OK. Appeal ${trimmed} set to ${result.status}.`);
+    const actionSuffix =
+      result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
+    console.log(`OK. Appeal ${trimmed} set to ${result.status}${actionSuffix}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
@@ -1275,8 +1307,8 @@ export async function cmdListPackageReports(
   options: PackageReportListOptions = {},
 ) {
   const status = options.status?.trim() || "open";
-  if (!["open", "triaged", "dismissed", "all"].includes(status)) {
-    fail("--status must be open, triaged, dismissed, or all");
+  if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
+    fail("--status must be open, confirmed, dismissed, or all");
   }
 
   const token = await requireAuthToken();
@@ -1310,7 +1342,7 @@ export async function cmdListPackageReports(
       console.log(`${item.reportId} ${item.status} ${item.name}${version}`);
       console.log(`  reporter: ${reporter}`);
       if (item.reason) console.log(`  reason: ${item.reason}`);
-      if (item.triageNote) console.log(`  triage: ${item.triageNote}`);
+      if (item.triageNote) console.log(`  note: ${item.triageNote}`);
     }
   }
   if (!result.done && result.nextCursor) {
@@ -1325,15 +1357,31 @@ export async function cmdTriagePackageReport(
 ) {
   const trimmed = reportId.trim();
   if (!trimmed) fail("Report id required");
-  const status = options.status?.trim();
-  if (!status || !["open", "triaged", "dismissed"].includes(status)) {
-    fail("--status must be open, triaged, or dismissed");
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "confirmed", "dismissed"].includes(statusValue)) {
+    fail("--status must be open, confirmed, or dismissed");
+  }
+  const status = statusValue as PackageReportStatus;
+  const finalAction = (options.finalAction ?? options.action)?.trim() as
+    | PackageReportFinalAction
+    | undefined;
+  if (finalAction && !["none", "quarantine", "revoke"].includes(finalAction)) {
+    fail("--action must be none, quarantine, or revoke");
   }
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    reportModerationPlan({
+      entityLabel: "package",
+      reportId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
   const spinner = options.json ? null : createSpinner(`Updating report ${trimmed}`);
   try {
     const result = await apiRequest(
@@ -1345,6 +1393,7 @@ export async function cmdTriagePackageReport(
         body: {
           status,
           ...(note ? { note } : {}),
+          ...(finalAction ? { finalAction } : {}),
         },
       },
       ApiV1PackageReportTriageResponseSchema,
@@ -1354,7 +1403,9 @@ export async function cmdTriagePackageReport(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
-    console.log(`OK. Report ${trimmed} set to ${result.status}.`);
+    const actionSuffix =
+      result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
+    console.log(`OK. Report ${trimmed} set to ${result.status}${actionSuffix}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
