@@ -19,6 +19,8 @@ export const LockfileSchema = type({
         "[string]": {
             version: "string|null",
             installedAt: "number",
+            pinned: "boolean?",
+            pinReason: "string?",
         },
     },
 });
@@ -90,6 +92,7 @@ export const CliSkillDeleteRequestSchema = type({
 });
 export const ApiCliSkillDeleteResponseSchema = type({
     ok: "true",
+    slugReservedUntil: "number?",
 });
 export const ApiSkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
@@ -347,6 +350,7 @@ export const ApiV1PublishResponseSchema = type({
 });
 export const ApiV1DeleteResponseSchema = type({
     ok: "true",
+    slugReservedUntil: "number?",
 });
 export const ApiV1RescanResponseSchema = type({
     ok: "true",

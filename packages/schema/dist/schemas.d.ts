@@ -20,6 +20,8 @@ export declare const LockfileSchema: import("arktype/internal/variants/object.ts
         [x: string]: {
             version: string | null;
             installedAt: number;
+            pinned?: boolean | undefined;
+            pinReason?: string | undefined;
         };
     };
 }, {}>;
@@ -109,6 +111,7 @@ export declare const CliSkillDeleteRequestSchema: import("arktype/internal/varia
 export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferred];
 export declare const ApiCliSkillDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
+    slugReservedUntil?: number | undefined;
 }, {}>;
 export declare const ApiSkillResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     match: {
@@ -393,6 +396,7 @@ export declare const ApiV1PublishResponseSchema: import("arktype/internal/varian
 }, {}>;
 export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
+    slugReservedUntil?: number | undefined;
 }, {}>;
 export declare const ApiV1RescanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
