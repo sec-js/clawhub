@@ -1448,11 +1448,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       );
       return json(result, 200, rate.headers);
     } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Rescan request failed",
-        400,
-        rate.headers,
-      );
+      return ownershipErrorToResponse(error, rate.headers);
     }
   }
 

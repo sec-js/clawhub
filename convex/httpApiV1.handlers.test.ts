@@ -2863,6 +2863,28 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("skill rescan maps ownership denials to 403", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { handle: "stranger" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      throw new Error("Forbidden: You do not own this skill.");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden: You do not own this skill.");
+  });
+
   it("package rescan routes authenticated owners to the rescan mutation", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -2900,6 +2922,28 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({ actorUserId: "users:1", name: "@scope/demo" }),
     );
+  });
+
+  it("package rescan maps ownership denials to 403", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { handle: "stranger" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      throw new Error("Forbidden: You do not own this package.");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden: You do not own this package.");
   });
 
   it("transfer request requires auth", async () => {
@@ -2953,6 +2997,34 @@ describe("httpApiV1 handlers", () => {
         toUserHandle: "@Alice",
       }),
     );
+  });
+
+  it("skill transfer maps ownership denials to 403", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { handle: "stranger" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) return { _id: "skills:1", slug: "demo" };
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      throw new Error("Forbidden: Only owners can transfer this skill.");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toUserHandle: "alice" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden: Only owners can transfer this skill.");
   });
 
   it("transfers a skill directly to an org publisher when the target handle is an org", async () => {
@@ -6758,6 +6830,32 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("package transfer maps ownership denials to 403", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { _id: "users:stranger", handle: "stranger" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      throw new Error("Forbidden: Only owners can transfer this package.");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40opik%2Fopik-openclaw/transfer", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ toOwner: "opik" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden: Only owners can transfer this package.");
+  });
+
   it("sets trusted publisher config for a package without environment", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -6884,6 +6982,43 @@ describe("httpApiV1 handlers", () => {
         name: "@openclaw/demo-plugin",
       }),
     );
+  });
+
+  it("package delete and undelete map ownership denials to 403", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { _id: "users:stranger", handle: "stranger" },
+    } as never);
+    const runMutationForbidden = vi.fn(
+      async (_mutation: unknown, args: Record<string, unknown>) => {
+        if ("key" in args) return okRate();
+        throw new Error("Forbidden: This package belongs to another owner.");
+      },
+    );
+
+    const deleteResponse = await __handlers.packagesDeleteRouterV1Handler(
+      makeCtx({ runMutation: runMutationForbidden }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(deleteResponse.status).toBe(403);
+    expect(await deleteResponse.text()).toBe("Forbidden: This package belongs to another owner.");
+
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { _id: "users:stranger", handle: "stranger" },
+    } as never);
+    const undeleteResponse = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation: runMutationForbidden }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/undelete", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(undeleteResponse.status).toBe(403);
+    expect(await undeleteResponse.text()).toBe("Forbidden: This package belongs to another owner.");
   });
 
   it("deletes trusted publisher config for a package", async () => {

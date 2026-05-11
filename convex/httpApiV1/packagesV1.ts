@@ -51,6 +51,7 @@ import {
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
+  formatAuthzMessage,
   text,
   toOptionalNumber,
 } from "./shared";
@@ -112,6 +113,21 @@ const internalRefs = internal as unknown as {
     getVersionBySkillAndVersionInternal: unknown;
   };
 };
+
+function packageOperationErrorToResponse(
+  error: unknown,
+  headers: HeadersInit,
+  fallback = "Package operation failed",
+) {
+  const message = error instanceof Error ? error.message : fallback;
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
+  if (lower.includes("not found")) return text(message, 404, headers);
+  return text(message, 400, headers);
+}
 
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runQuery(ref as never, args as never)) as T;
@@ -1721,11 +1737,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       );
       return json(result, 200, rate.headers);
     } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Rescan request failed",
-        400,
-        rate.headers,
-      );
+      return packageOperationErrorToResponse(error, rate.headers, "Rescan request failed");
     }
   }
 
@@ -1770,11 +1782,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       );
       return json(result, 200, rate.headers);
     } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package transfer failed",
-        400,
-        rate.headers,
-      );
+      return packageOperationErrorToResponse(error, rate.headers, "Package transfer failed");
     }
   }
 

@@ -6,6 +6,8 @@
 
 ### Fixes
 
+- API: return deterministic 403 responses for skill/package rescan and package transfer permission denials, with CI e2e coverage for protected write endpoints.
+
 ## 0.13.0 - 2026-05-11
 
 ### Changes

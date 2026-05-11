@@ -421,9 +421,12 @@ export declare const ApiV1SkillMergeResponseSchema: import("arktype/internal/var
 }, {}>;
 export declare const ApiV1TransferRequestResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
-    transferId: string;
-    toUserHandle: string;
-    expiresAt: number;
+    transferId?: string | undefined;
+    toUserHandle?: string | undefined;
+    toPublisherHandle?: string | undefined;
+    skillSlug?: string | undefined;
+    expiresAt?: number | undefined;
+    transferred?: boolean | undefined;
 }, {}>;
 export declare const ApiV1TransferDecisionResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
