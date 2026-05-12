@@ -52,7 +52,7 @@ test("known public skill detail links to owner profile", async ({ page, request 
 
   const errors = trackRuntimeErrors(page);
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
-  const ownerLink = page.locator(".user-handle").first();
+  const ownerLink = page.locator(`a[href="/p/${ownerHandle}"]`).first();
 
   await expect(ownerLink).toHaveAttribute("href", new RegExp(`/p/${ownerHandle}$`));
   await ownerLink.click();

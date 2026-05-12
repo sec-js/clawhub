@@ -6,6 +6,8 @@
 
 ### Fixes
 
+- Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
+
 ## 0.15.0 - 2026-05-12
 
 ### Changes
