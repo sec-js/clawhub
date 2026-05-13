@@ -681,6 +681,68 @@ describe("ensureHandler", () => {
       expect.objectContaining({ handle: "openclaw" }),
     );
   });
+
+  it("does not fail page/session ensure when personal publisher handle sync conflicts", async () => {
+    const { ctx, insert, patch, query } = makeCtx();
+    query.mockImplementation(((table: string) => {
+      if (table === "reservedHandles") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_handle_active_updatedAt") {
+              throw new Error(`Unexpected reservedHandles index ${name}`);
+            }
+            return { order: () => ({ take: vi.fn(async () => []) }) };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: (name: string) => {
+            if (name === "by_linked_user") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (name === "by_handle") {
+              return {
+                unique: vi.fn(async () => ({
+                  _id: "publishers:claimed",
+                  _creationTime: 1,
+                  kind: "user",
+                  handle: "claimed",
+                  displayName: "Claimed",
+                  linkedUserId: "users:other",
+                  createdAt: 1,
+                  updatedAt: 1,
+                })),
+              };
+            }
+            throw new Error(`Unexpected publishers index ${name}`);
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    }) as never);
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:self",
+      user: {
+        _id: "users:self",
+        _creationTime: 1,
+        handle: "claimed",
+        displayName: "Self",
+        name: undefined,
+        email: undefined,
+        role: "user",
+        createdAt: 1,
+      },
+    } as never);
+
+    await expect(ensureHandler(ctx)).resolves.toBeNull();
+
+    expect(patch).not.toHaveBeenCalledWith(
+      "users:self",
+      expect.objectContaining({ handle: expect.any(String) }),
+    );
+    expect(insert).not.toHaveBeenCalledWith("publishers", expect.anything());
+  });
 });
 
 describe("me", () => {

@@ -394,10 +394,15 @@ export async function ensureHandler(ctx: MutationCtx) {
   const ensuredUser = hasUpdates
     ? ({ ...user, ...updates } as Doc<"users">)
     : ((await ctx.db.get(userId)) ?? user);
-  await ensurePersonalPublisherForUser(ctx, ensuredUser, {
-    actorUserId: userId,
-    source: "user.ensure",
-  });
+  await ensurePersonalPublisherForUser(
+    ctx,
+    ensuredUser,
+    {
+      actorUserId: userId,
+      source: "user.ensure",
+    },
+    { handleConflict: "skip" },
+  );
   if (hasUpdates) {
     await ctx.db.insert("auditLogs", {
       actorUserId: userId,
