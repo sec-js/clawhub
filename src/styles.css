@@ -4444,19 +4444,19 @@ code {
 }
 
 .security-audit-meter[data-level="1"] span:first-child {
-  background: #79e68e;
+  background: #ef7777;
 }
 
 .security-audit-meter[data-level="2"] span:nth-child(-n + 2) {
-  background: #6aa9ff;
-}
-
-.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
   background: #f1b85a;
 }
 
+.security-audit-meter[data-level="3"] span:nth-child(-n + 3) {
+  background: #6aa9ff;
+}
+
 .security-audit-meter[data-level="4"] span {
-  background: #ef7777;
+  background: #79e68e;
 }
 
 .publisher-clawscan-note {
@@ -4646,6 +4646,30 @@ code {
   min-width: 0;
   align-items: center;
   gap: 8px;
+}
+
+.security-audit-version-stack {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  width: 100%;
+}
+
+.security-audit-rescan-button {
+  margin-top: 4px;
+}
+
+.security-audit-rescan-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.security-audit-rescan-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .skill-action-count {
