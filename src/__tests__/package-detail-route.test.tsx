@@ -970,10 +970,11 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
-    render(<Component />);
+    const { container } = render(<Component />);
 
-    expect(screen.getAllByText("Official").length).toBeGreaterThan(0);
     expect(screen.getAllByLabelText("Official").length).toBeGreaterThan(0);
+    expect(container.querySelector(".skill-hero-creator .official-badge-icon-only")).toBeTruthy();
+    expect(container.querySelector(".skill-hero-title-row .official-tag")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -1106,7 +1107,8 @@ describe("plugin detail route", () => {
     const typeRow = sidebarRows.find((row) => row.text.includes("Code Plugin"));
     expect(downloadsRow?.hasDownload).toBe(false);
     expect(downloadOnlyRow).toBeTruthy();
-    expect(creatorRow).toBeTruthy();
+    expect(creatorRow).toBeUndefined();
+    expect(document.querySelector(".skill-hero-creator")?.textContent).toContain("Demo Owner");
     expect(typeRow).toBeTruthy();
     expect(sidebarRows.at(-1)).toEqual(downloadOnlyRow);
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
