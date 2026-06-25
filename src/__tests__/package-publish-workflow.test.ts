@@ -49,6 +49,9 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("plugin-inspector-bulk-scan-reports");
     expect(workflow).toContain("source_pr:");
     expect(workflow).toContain("source_sha:");
+    expect(workflow).toContain(
+      "concurrency:\n  group: clawhub-plugin-inspector-bulk-scan\n  cancel-in-progress: false",
+    );
     expect(workflow).not.toMatch(/^\s*schedule:/m);
     expect(workflow).not.toMatch(/^\s*-\s*cron:/m);
     expect(workflow).toContain("ref: main");

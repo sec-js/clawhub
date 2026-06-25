@@ -28,6 +28,11 @@ on:
 permissions:
   contents: read
 
+# Side-effecting scans queue behind the active run instead of overlapping.
+concurrency:
+  group: clawhub-plugin-inspector-bulk-scan
+  cancel-in-progress: false
+
 jobs:
   scan:
     name: Scan published plugins
