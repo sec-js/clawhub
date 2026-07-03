@@ -33,6 +33,7 @@ import {
   canBanPublisherAbuseOwner,
   comparePublisherAbuseItems,
   filterPublisherAbuseItems,
+  filterPublisherAbuseSignals,
   getPublisherAbuseItemsForTab,
   getPublisherAbuseVisiblePendingItems,
 } from "./-management/AbusePage";
@@ -47,7 +48,9 @@ import {
   type ManagementUserListResult,
   type ManagementView,
   type PluginByNameResult,
+  type PublisherAbuseSignalEntry,
   type PublisherAbuseReviewItem,
+  type PublisherAbuseSignalStatus,
   type PublisherAbuseTab,
   type RecentVersionEntry,
   type ReportedSkillEntry,
@@ -77,6 +80,18 @@ const MANAGEMENT_VIEWS = new Set<string>([
 
 function isManagementView(value: unknown): value is ManagementView {
   return typeof value === "string" && MANAGEMENT_VIEWS.has(value);
+}
+
+const PUBLISHER_ABUSE_TABS = new Set<string>([
+  "potential_ban_candidate",
+  "review",
+  "all_pending",
+  "resolved",
+  "signals",
+]);
+
+function isPublisherAbuseTab(value: unknown): value is PublisherAbuseTab {
+  return typeof value === "string" && PUBLISHER_ABUSE_TABS.has(value);
 }
 
 type ManagementConfirmRequest = {
@@ -170,6 +185,7 @@ export const Route = createFileRoute("/management")({
       skill?: string;
       plugin?: string;
       view?: ManagementView;
+      tab?: PublisherAbuseTab;
     } = {};
     if (typeof search.skill === "string" && search.skill.trim()) {
       validated.skill = search.skill;
@@ -179,6 +195,9 @@ export const Route = createFileRoute("/management")({
     }
     if (isManagementView(search.view)) {
       validated.view = search.view;
+    }
+    if (isPublisherAbuseTab(search.tab)) {
+      validated.tab = search.tab;
     }
     return validated;
   },
@@ -241,6 +260,9 @@ export function Management() {
   const setPublisherAbuseAutobanEnabled = useMutation(
     api.publisherAbuse.setPublisherAbuseAutobanEnabled,
   );
+  const snoozePublisherAbuseSignal = useMutation(api.publisherAbuse.snoozePublisherAbuseSignal);
+  const dismissPublisherAbuseSignal = useMutation(api.publisherAbuse.dismissPublisherAbuseSignal);
+  const reopenPublisherAbuseSignal = useMutation(api.publisherAbuse.reopenPublisherAbuseSignal);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
@@ -255,10 +277,13 @@ export function Management() {
   const [skillSearch, setSkillSearch] = useState(selectedSlug ?? "");
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ManagementConfirmRequest | null>(null);
-  const [publisherAbuseTab, setPublisherAbuseTab] =
-    useState<PublisherAbuseTab>("potential_ban_candidate");
+  const [publisherAbuseTab, setPublisherAbuseTab] = useState<PublisherAbuseTab>(
+    abuseViewActive ? (search.tab ?? "potential_ban_candidate") : "potential_ban_candidate",
+  );
   const [publisherAbuseSearch, setPublisherAbuseSearch] = useState("");
   const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
+  const [publisherAbuseSignalStatus, setPublisherAbuseSignalStatus] =
+    useState<PublisherAbuseSignalStatus>("open");
   const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
   const {
@@ -267,7 +292,20 @@ export function Management() {
     loadMore: loadMorePublisherAbuseItems,
   } = usePaginatedQuery(
     api.publisherAbuse.listReviewItemsPage,
-    staff && abuseViewActive ? { tab: publisherAbuseTab } : "skip",
+    staff && abuseViewActive && publisherAbuseTab !== "signals"
+      ? { tab: publisherAbuseTab }
+      : "skip",
+    { initialNumItems: 25 },
+  );
+  const {
+    results: publisherAbuseSignalPageResults,
+    status: publisherAbuseSignalPageStatus,
+    loadMore: loadMorePublisherAbuseSignals,
+  } = usePaginatedQuery(
+    api.publisherAbuse.listSignalsPage,
+    staff && abuseViewActive && publisherAbuseTab === "signals"
+      ? { reviewStatus: publisherAbuseSignalStatus }
+      : "skip",
     { initialNumItems: 25 },
   );
 
@@ -302,6 +340,8 @@ export function Management() {
     [publisherAbuseDashboard, publisherAbuseTab],
   );
   const publisherAbusePageItems = (publisherAbusePageResults ?? []) as PublisherAbuseReviewItem[];
+  const publisherAbuseSignalItems = (publisherAbuseSignalPageResults ??
+    []) as PublisherAbuseSignalEntry[];
   const publisherAbuseItemsForTab =
     publisherAbusePageItems.length > 0 || publisherAbuseDashboardFallbackItems.length === 0
       ? publisherAbusePageItems
@@ -317,6 +357,10 @@ export function Management() {
     ) ?? null;
   const selectedPublisherAbuseItem =
     selectedPublisherAbuseDetail?.item ?? fallbackSelectedPublisherAbuseItem;
+  const filteredPublisherAbuseSignals = useMemo(
+    () => filterPublisherAbuseSignals(publisherAbuseSignalItems, publisherAbuseSearch),
+    [publisherAbuseSignalItems, publisherAbuseSearch],
+  );
 
   useEffect(() => {
     if (!selectedSkillId || !selectedOwnerUserId) return;
@@ -335,6 +379,16 @@ export function Management() {
   useEffect(() => {
     setSkillSearch(selectedSlug ?? "");
   }, [selectedSlug]);
+
+  useEffect(() => {
+    if (!abuseViewActive) return;
+    const nextTab = search.tab ?? "potential_ban_candidate";
+    setPublisherAbuseTab(nextTab);
+    if (nextTab === "signals") {
+      setPublisherAbuseNotes("");
+      setSelectedPublisherAbuseNominationId(null);
+    }
+  }, [abuseViewActive, search.tab]);
 
   useEffect(() => {
     const handle = setTimeout(() => setReportSearchDebounced(reportSearch), 250);
@@ -585,6 +639,58 @@ export function Management() {
     });
   };
 
+  const requestSnoozePublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
+    setConfirmRequest({
+      title: `Snooze ${item.signal.skillDisplayName}?`,
+      body: "Hides this signal from the default review queue for 14 days. If it reappears after that, it will reopen and notify Hermit again.",
+      confirmLabel: "Snooze 14 days",
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you snoozing this signal?",
+      },
+      onConfirm: (note) => {
+        void snoozePublisherAbuseSignal({ signalId: item.signal._id, note, days: 14 })
+          .then(() => toast.success("Signal snoozed."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestDismissPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
+    setConfirmRequest({
+      title: `Dismiss ${item.signal.skillDisplayName}?`,
+      body: "Dismissed signals stay archived but are hidden from the default review queue and will not notify Hermit unless reopened.",
+      confirmLabel: "Dismiss signal",
+      destructive: true,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you dismissing this signal?",
+      },
+      onConfirm: (note) => {
+        void dismissPublisherAbuseSignal({ signalId: item.signal._id, note })
+          .then(() => toast.success("Signal dismissed."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestReopenPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
+    setConfirmRequest({
+      title: `Reopen ${item.signal.skillDisplayName}?`,
+      body: "Returns this signal to the default review queue and queues a Hermit digest notification.",
+      confirmLabel: "Reopen signal",
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you reopening this signal?",
+      },
+      onConfirm: (note) => {
+        void reopenPublisherAbuseSignal({ signalId: item.signal._id, note })
+          .then(() => toast.success("Signal reopened."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
   const requestTogglePublisherAbuseAutoban = () => {
     if (!publisherAbuseAutobanSetting) return;
     const nextEnabled = !publisherAbuseAutobanSetting.enabled;
@@ -640,13 +746,40 @@ export function Management() {
             search={publisherAbuseSearch}
             selectedItem={selectedPublisherAbuseItem}
             selectedNominationId={selectedPublisherAbuseNominationId}
+            signalItems={filteredPublisherAbuseSignals}
+            signalLoadedCount={publisherAbuseSignalItems.length}
+            signalPageStatus={publisherAbuseSignalPageStatus}
+            signalStatus={publisherAbuseSignalStatus}
             tab={publisherAbuseTab}
             onBanOwner={banPublisherAbuseOwner}
             onChangeNotes={setPublisherAbuseNotes}
             onChangeSearch={setPublisherAbuseSearch}
-            onChangeTab={setPublisherAbuseTab}
+            onChangeSignalStatus={setPublisherAbuseSignalStatus}
+            onChangeTab={(nextTab) => {
+              setPublisherAbuseTab(nextTab);
+              if (nextTab === "signals") {
+                setPublisherAbuseNotes("");
+                setSelectedPublisherAbuseNominationId(null);
+              }
+              void navigate({
+                to: "/management",
+                search: {
+                  view: "abuse",
+                  tab: nextTab,
+                  skill: undefined,
+                  plugin: undefined,
+                },
+              });
+            }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
-            onLoadMore={() => loadMorePublisherAbuseItems(25)}
+            onDismissSignal={requestDismissPublisherAbuseSignal}
+            onLoadMore={() => {
+              if (publisherAbuseTab === "signals") {
+                loadMorePublisherAbuseSignals(25);
+              } else {
+                loadMorePublisherAbuseItems(25);
+              }
+            }}
             onRefresh={() => {
               setConfirmRequest({
                 title: "Run a new abuse scan?",
@@ -663,10 +796,12 @@ export function Management() {
               setPublisherAbuseNotes("");
               setSelectedPublisherAbuseNominationId(null);
             }}
+            onReopenSignal={requestReopenPublisherAbuseSignal}
             onSelect={(nominationId) => {
               setPublisherAbuseNotes("");
               setSelectedPublisherAbuseNominationId(nominationId);
             }}
+            onSnoozeSignal={requestSnoozePublisherAbuseSignal}
           />
         ) : null}
 
