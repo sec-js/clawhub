@@ -119,6 +119,7 @@ export function PackageSourceChooser(props: {
   codePluginFieldIssues: string[];
   onPickFiles: (selected: File[], sourceKind: PackagePickSource) => Promise<void>;
   onClearFiles: () => void;
+  emptyStateLayout?: boolean;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement | null>(null);
@@ -139,14 +140,10 @@ export function PackageSourceChooser(props: {
   const hasPackagePanelFooter = props.ignoredPaths.length > 0 || Boolean(props.validationError);
   const selectedPackagePanelToneClass = isDragging
     ? "border-[color:var(--oc-border-accent)] bg-[color:var(--oc-surface-accent-soft)]"
-    : isMetadataLocked
-      ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-      : "border-status-success-fg/35 bg-status-success-bg";
+    : "border-[color:var(--line)] bg-[color:var(--surface-muted)]";
   const selectedPackagePanelBgClass = isDragging
     ? "bg-[color:var(--oc-surface-accent-soft)]"
-    : isMetadataLocked
-      ? "bg-[color:var(--surface-muted)]"
-      : "bg-status-success-bg";
+    : "bg-[color:var(--surface-muted)]";
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;
@@ -290,9 +287,12 @@ export function PackageSourceChooser(props: {
           </div>
         </div>
       ) : (
-        <Card className="mb-5">
+        <Card className={props.emptyStateLayout ? "publish-empty-upload-card" : "mb-5"}>
           <div
-            className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--oc-radius-inset)] border-2 border-dashed p-8 text-center transition-colors ${
+            data-dragging={isDragging ? "true" : undefined}
+            className={`${
+              props.emptyStateLayout ? "publish-empty-dropzone" : "p-8"
+            } relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--oc-radius-inset)] border-2 border-dashed text-center transition-colors ${
               isDragging
                 ? "border-[color:var(--oc-border-accent)] bg-[color:var(--oc-surface-accent-soft)]"
                 : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -305,22 +305,21 @@ export function PackageSourceChooser(props: {
             onDrop={handleDrop}
           >
             <UploadDropzoneDecor active={isDragging} kind="plugin" />
-            <div className="relative z-[1] flex flex-col items-center gap-2">
+            <div className="relative z-[1] flex w-full flex-col items-center gap-3">
               <div className="flex items-center gap-3">
-                <Upload className="h-5 w-5 text-[color:var(--ink-soft)]" aria-hidden="true" />
-                <strong className="text-[color:var(--ink)]">Upload plugin code first</strong>
+                <Upload className="h-4 w-4 text-[color:var(--ink-soft)]" aria-hidden="true" />
+                <strong className="text-[color:var(--ink)]">Upload plugin first</strong>
               </div>
-              <span className="max-w-md text-sm text-[color:var(--ink-soft)]">
-                Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the
-                rest of the form.
+              <span className="max-w-[520px] text-sm text-[color:var(--ink-soft)]">
+                Drop a plugin file or folder here.
               </span>
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-3 pt-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => archiveInputRef.current?.click()}
                 >
-                  Choose archive
+                  Choose file
                 </Button>
                 <Button
                   variant="ghost"
