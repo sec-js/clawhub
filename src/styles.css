@@ -32620,6 +32620,7 @@ a[class*="rounded-full"] {
   display: grid;
   width: 100%;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: 7px;
 }
@@ -32628,6 +32629,7 @@ a[class*="rounded-full"] {
   display: block;
   width: 100%;
   max-width: 100%;
+  justify-self: stretch;
 }
 
 .dashboard-final .dashboard-attention-visibility {
